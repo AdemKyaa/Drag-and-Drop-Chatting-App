@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/box_item.dart';
 
@@ -29,6 +30,13 @@ class ResizableTextBox extends StatefulWidget {
 
 class _ResizableTextBoxState extends State<ResizableTextBox> {
   late TextEditingController _controller;
+  Timer? _debounce;
+
+  // pinch zoom için başlangıç boyutları
+  double _startW = 0;
+  double _startH = 0;
+  Offset _startPos = Offset.zero;
+  bool _wasScaling = false;
 
   @override
   void initState() {
@@ -37,18 +45,8 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
   }
 
   @override
-  void didUpdateWidget(covariant ResizableTextBox oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.isEditing && _controller.text != widget.box.text) {
-      _controller.text = widget.box.text;
-      _controller.selection = TextSelection.fromPosition(
-        TextPosition(offset: _controller.text.length),
-      );
-    }
-  }
-
-  @override
   void dispose() {
+    _debounce?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -61,24 +59,54 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
       left: box.position.dx,
       top: box.position.dy,
       child: GestureDetector(
+        // seçim
         onTap: () => widget.onSelect(false),
-        onPanStart: (_) => widget.onSelect(false),
-        onPanUpdate: (details) {
-          setState(() {
-            box.position += details.delta;
-          });
-          widget.onUpdate();
+
+        // 🔹 Pinch zoom & sürükleme aynı anda scale recognizer üzerinden
+        onScaleStart: (details) {
+          widget.onSelect(false);
+          _startW = box.width;
+          _startH = box.height;
+          _startPos = box.position;
+          _wasScaling = false;
         },
-        onPanEnd: (_) {
-          final renderBox = context.findRenderObject() as RenderBox;
-          final center =
-              renderBox.localToGlobal(Offset(box.width / 2, box.height / 2));
-          if (widget.isOverTrash(center)) {
-            widget.onDelete();
+        onScaleUpdate: (details) {
+          if (details.pointerCount >= 2) {
+            // 🔍 pinch zoom
+            _wasScaling = true;
+            setState(() {
+              final scale = details.scale;
+
+              final newW = (_startW * scale).clamp(40, 600).toDouble();
+              final newH = (_startH * scale).clamp(40, 600).toDouble();
+
+              // merkez sabit kalsın
+              final dx = (_startW - newW) / 2;
+              final dy = (_startH - newH) / 2;
+
+              box.width = newW;
+              box.height = newH;
+              box.position = _startPos + Offset(dx, dy);
+            });
+            widget.onUpdate();
+          } else {
+            // ☝️ tek parmak → sürükleme
+            setState(() {
+              box.position += details.focalPointDelta;
+            });
+            widget.onUpdate();
+
+            final rb = context.findRenderObject() as RenderBox;
+            final topLeft = rb.localToGlobal(Offset.zero);
+            final center = topLeft + Offset(box.width / 2, box.height / 2);
+            widget.onDraggingOverTrash?.call(widget.isOverTrash(center));
           }
-          widget.onDraggingOverTrash?.call(false);
-          widget.onSave(); // ✅ konum bırakıldığında kaydet
         },
+        onScaleEnd: (_) {
+          widget.onSave(); // bırakıldığında kaydet
+          widget.onDraggingOverTrash?.call(false);
+        },
+
         child: Stack(
           clipBehavior: Clip.none,
           children: [
@@ -109,28 +137,15 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                             : TextDecoration.none,
                       ),
                       onChanged: (value) {
-                        if (box.bullet) {
-                          final lines = value.split('\n');
-                          for (int i = 0; i < lines.length; i++) {
-                            if (lines[i].isNotEmpty &&
-                                !lines[i].startsWith("• ")) {
-                              lines[i] = "• ${lines[i]}";
-                            }
-                          }
-                          final newText = lines.join('\n');
-                          if (newText != box.text) {
-                            box.text = newText;
-                            _controller.text = newText;
-                            _controller.selection =
-                                TextSelection.fromPosition(
-                              TextPosition(offset: _controller.text.length),
-                            );
-                          }
-                        } else {
-                          box.text = value;
-                        }
+                        box.text = value;
                         widget.onUpdate();
-                        widget.onSave(); // ✅ yazı değişince kaydet
+
+                        // debounce save
+                        _debounce?.cancel();
+                        _debounce =
+                            Timer(const Duration(milliseconds: 500), () {
+                          widget.onSave();
+                        });
                       },
                       onEditingComplete: widget.onSave,
                       onSubmitted: (_) => widget.onSave(),
@@ -178,7 +193,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
           behavior: HitTestBehavior.opaque,
           onPanUpdate: (details) =>
               onResize(details.delta.dx, details.delta.dy),
-          onPanEnd: (_) => widget.onSave(), // ✅ resize bırakıldığında kaydet
+          onPanEnd: (_) => widget.onSave(),
           child: Container(
             width: handleSize,
             height: handleSize,
@@ -188,7 +203,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
       ));
     }
 
-    // köşe ve kenar handle’lar → kaydetme eklendi
+    // köşeler
     addHandle(-handleSize / 2 + 16, -handleSize / 2 + 16, Colors.red, (dx, dy) {
       setState(() {
         box.width = (box.width - dx).clamp(40, 600);
@@ -198,7 +213,8 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
       widget.onUpdate();
     });
 
-    addHandle(box.width - handleSize / 2 - 16, -handleSize / 2 + 16, Colors.red, (dx, dy) {
+    addHandle(box.width - handleSize / 2 - 16, -handleSize / 2 + 16, Colors.red,
+        (dx, dy) {
       setState(() {
         box.width = (box.width + dx).clamp(40, 600);
         box.height = (box.height - dy).clamp(40, 600);
