@@ -166,7 +166,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
   }
 
   List<Widget> _buildResizeHandles(BoxItem box) {
-    const double handleSize = 16;
+    const double handleSize = 32;
     final List<Widget> handles = [];
 
     void addHandle(double left, double top, Color color,
@@ -189,7 +189,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     }
 
     // köşe ve kenar handle’lar → kaydetme eklendi
-    addHandle(-handleSize / 2, -handleSize / 2, Colors.red, (dx, dy) {
+    addHandle(-handleSize / 2 + 16, -handleSize / 2 + 16, Colors.red, (dx, dy) {
       setState(() {
         box.width = (box.width - dx).clamp(40, 600);
         box.height = (box.height - dy).clamp(40, 600);
@@ -198,7 +198,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
       widget.onUpdate();
     });
 
-    addHandle(box.width - handleSize / 2, -handleSize / 2, Colors.red, (dx, dy) {
+    addHandle(box.width - handleSize / 2 - 16, -handleSize / 2 + 16, Colors.red, (dx, dy) {
       setState(() {
         box.width = (box.width + dx).clamp(40, 600);
         box.height = (box.height - dy).clamp(40, 600);
@@ -207,7 +207,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
       widget.onUpdate();
     });
 
-    addHandle(-handleSize / 2, box.height - handleSize / 2, Colors.red,
+    addHandle(-handleSize / 2 + 16, box.height - handleSize / 2 - 16, Colors.red,
         (dx, dy) {
       setState(() {
         box.width = (box.width - dx).clamp(40, 600);
@@ -217,7 +217,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
       widget.onUpdate();
     });
 
-    addHandle(box.width - handleSize / 2, box.height - handleSize / 2,
+    addHandle(box.width - handleSize / 2 - 16, box.height - handleSize / 2 - 16,
         Colors.red, (dx, dy) {
       setState(() {
         box.width = (box.width + dx).clamp(40, 600);
@@ -227,7 +227,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     });
 
     // kenarlar
-    addHandle(box.width / 2 - handleSize / 2, -handleSize / 2, Colors.blue,
+    addHandle(box.width / 2 - handleSize / 2, -handleSize / 2 + 16, Colors.blue,
         (dx, dy) {
       setState(() {
         box.height = (box.height - dy).clamp(40, 600);
@@ -236,7 +236,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
       widget.onUpdate();
     });
 
-    addHandle(box.width / 2 - handleSize / 2, box.height - handleSize / 2,
+    addHandle(box.width / 2 - handleSize / 2, box.height - handleSize / 2 - 16,
         Colors.blue, (dx, dy) {
       setState(() {
         box.height = (box.height + dy).clamp(40, 600);
@@ -244,7 +244,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
       widget.onUpdate();
     });
 
-    addHandle(-handleSize / 2, box.height / 2 - handleSize / 2, Colors.blue,
+    addHandle(-handleSize / 2 + 16, box.height / 2 - handleSize / 2, Colors.blue,
         (dx, dy) {
       setState(() {
         box.width = (box.width - dx).clamp(40, 600);
@@ -253,7 +253,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
       widget.onUpdate();
     });
 
-    addHandle(box.width - handleSize / 2, box.height / 2 - handleSize / 2,
+    addHandle(box.width - handleSize / 2 - 16, box.height / 2 - handleSize / 2,
         Colors.blue, (dx, dy) {
       setState(() {
         box.width = (box.width + dx).clamp(40, 600);
