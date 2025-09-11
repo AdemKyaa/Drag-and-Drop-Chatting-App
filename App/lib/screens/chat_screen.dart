@@ -53,10 +53,8 @@ class _ChatScreenState extends State<ChatScreen> {
       final incoming =
           snapshot.docs.map((d) => BoxItem.fromJson(d.data())).toList();
 
-      // z-index’e göre sırala
       incoming.sort((a, b) => a.z.compareTo(b.z));
 
-      // Etkileşim sırasında seçili öğeyi yerelde olduğu gibi koru:
       List<BoxItem> merged;
       if (_isInteracting && _selectedId != null) {
         final localMap = {for (final b in _boxes) b.id: b};
@@ -70,10 +68,8 @@ class _ChatScreenState extends State<ChatScreen> {
         merged = incoming;
       }
 
-      // tekrar z-sırala
       merged.sort((a, b) => a.z.compareTo(b.z));
 
-      // Seçimi koru
       for (final b in merged) {
         b.isSelected = (b.id == _selectedId);
       }
@@ -102,9 +98,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
 
     setState(() {
-      for (var b in _boxes) {
-        b.isSelected = false;
-      }
+      for (var b in _boxes) b.isSelected = false;
       newBox.isSelected = true;
       _boxes.add(newBox);
       _editingBox = null;
@@ -121,7 +115,6 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  // --- Image Picker + Firestore Blob (sıkıştırma ile) ---
   Future<Uint8List> _compressToFirestoreLimit(Uint8List data) async {
     final img.Image? decoded = img.decodeImage(data);
     if (decoded == null) return data;
@@ -155,7 +148,6 @@ class _ChatScreenState extends State<ChatScreen> {
     Uint8List bytes = await picked.readAsBytes();
     bytes = await _compressToFirestoreLimit(bytes);
 
-    // başlangıç boyutu (cover kırpacağı için en/boy oranını korumak zorunda değiliz)
     final now = DateTime.now().millisecondsSinceEpoch;
     final newBox = BoxItem(
       id: now.toString(),
@@ -167,6 +159,16 @@ class _ChatScreenState extends State<ChatScreen> {
       z: now,
     );
 
+    // Hemen ekranda göster
+    setState(() {
+      for (var b in _boxes) b.isSelected = false;
+      newBox.isSelected = true;
+      _boxes.add(newBox);
+      _editingBox = null;
+      _selectedId = newBox.id;
+    });
+
+    // Firestore'a yaz
     await messages.add({
       ...newBox.toJson(
         getConversationId(),
@@ -181,7 +183,7 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() {
       if (_editingBox == box) _editingBox = null;
       _boxes.remove(box);
-      if (_selectedId == box.id) _selectedId = null; // kritik
+      if (_selectedId == box.id) _selectedId = null;
     });
 
     final snapshot = await messages
@@ -213,117 +215,54 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   bool _isOverTrash(Offset position) {
-    final renderBox =
-        _trashKey.currentContext?.findRenderObject() as RenderBox?;
+    final renderBox = _trashKey.currentContext?.findRenderObject() as RenderBox?;
     if (renderBox == null) return false;
-    final trashPos = renderBox.localToGlobal(Offset.zero);
+    final trashPos  = renderBox.localToGlobal(Offset.zero);
     final trashSize = renderBox.size;
-
-    final rect =
-        Rect.fromLTWH(trashPos.dx, trashPos.dy, trashSize.width, trashSize.height)
-            .inflate(32);
+    final rect = Rect.fromLTWH(trashPos.dx, trashPos.dy, trashSize.width, trashSize.height)
+        .inflate(32);
     return rect.contains(position);
   }
 
   void _selectBox(BoxItem box, {bool edit = false}) {
     setState(() {
-      for (var b in _boxes) {
-        b.isSelected = false;
-      }
+      for (var b in _boxes) b.isSelected = false;
       box.isSelected = true;
       _selectedId = box.id;
       _editingBox = edit ? box : null;
 
-      // en üste al
-      _boxes.remove(box);
-      _boxes.add(box);
-
-      // kalıcı z-index
+      // üstte göster
       box.z = DateTime.now().millisecondsSinceEpoch;
     });
     _updateBox(box);
   }
 
-  void _bringToFront(BoxItem b) {
-    final maxZ =
-        _boxes.isEmpty ? 0 : _boxes.map((e) => e.z).reduce((a, c) => a > c ? a : c);
-    b.z = maxZ + 10;
-    _boxes.remove(b);
-    _boxes.add(b);
-    setState(() {});
-    _updateBox(b);
-  }
-
-  void _sendToBack(BoxItem b) {
-    final minZ =
-        _boxes.isEmpty ? 0 : _boxes.map((e) => e.z).reduce((a, c) => a < c ? a : c);
-    b.z = minZ - 10;
-    _boxes.remove(b);
-    _boxes.insert(0, b);
-    setState(() {});
-    _updateBox(b);
-  }
-
-  Future<void> _bringForward(BoxItem b) async {
-    final sorted = [..._boxes]..sort((a, c) => a.z.compareTo(c.z));
-    final i = sorted.indexOf(b);
-    if (i >= 0 && i < sorted.length - 1) {
-      final next = sorted[i + 1];
-      final tmp = b.z;
-      b.z = next.z;
-      next.z = tmp;
-      setState(() {});
-      await _updateBox(b);
-      await _updateBox(next);
-    }
-  }
-
-  Future<void> _sendBackward(BoxItem b) async {
-    final sorted = [..._boxes]..sort((a, c) => a.z.compareTo(c.z));
-    final i = sorted.indexOf(b);
-    if (i > 0) {
-      final prev = sorted[i - 1];
-      final tmp = b.z;
-      b.z = prev.z;
-      prev.z = tmp;
-      setState(() {});
-      await _updateBox(b);
-      await _updateBox(prev);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
+    // Z'ye göre yerel sıralama (En üste/alta anında çalışsın)
+    final boxesSorted = [..._boxes]..sort((a, b) => a.z.compareTo(b.z));
+
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.otherUsername),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.add_box),
-            onPressed: _addBox,
-          ),
-          IconButton(
-            icon: const Icon(Icons.image),
-            onPressed: _addImageBox,
-          ),
+          IconButton(icon: const Icon(Icons.add_box), onPressed: _addBox),
+          IconButton(icon: const Icon(Icons.image), onPressed: _addImageBox),
         ],
       ),
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onTap: () {
-          // boşluğa basınca: klavye kapat + seçimleri bırak
           FocusScope.of(context).unfocus();
           setState(() {
-            for (var b in _boxes) {
-              b.isSelected = false;
-            }
+            for (var b in _boxes) b.isSelected = false;
             _editingBox = null;
             _selectedId = null;
           });
         },
         child: Stack(
           children: [
-            ..._boxes.map((box) {
+            ...boxesSorted.map((box) {
               return ResizableTextBox(
                 key: ValueKey(box.id),
                 box: box,
@@ -336,7 +275,6 @@ class _ChatScreenState extends State<ChatScreen> {
                 onDraggingOverTrash: (isOver) {
                   setState(() => _draggingOverTrash = isOver);
                 },
-                // etkileşim başladığında stream yereli ezmesin:
                 onInteract: (active) => setState(() => _isInteracting = active),
               );
             }),

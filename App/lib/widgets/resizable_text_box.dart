@@ -11,7 +11,7 @@ class ResizableTextBox extends StatefulWidget {
   final VoidCallback onDelete;
   final bool Function(Offset) isOverTrash;
   final void Function(bool)? onDraggingOverTrash;
-  final void Function(bool active)? onInteract; // stream çakışmasını engellemek için
+  final void Function(bool active)? onInteract;
 
   const ResizableTextBox({
     super.key,
@@ -31,6 +31,9 @@ class ResizableTextBox extends StatefulWidget {
 }
 
 class _ResizableTextBoxState extends State<ResizableTextBox> {
+  static const double _padH = 12; // text padding
+  static const double _padV = 6;
+
   int _overTrashFrames = 0;
   late TextEditingController _controller;
   final FocusNode _focusNode = FocusNode();
@@ -50,7 +53,6 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     super.initState();
     _controller = TextEditingController(text: widget.box.text);
 
-    // Fokus değişince etkileşim bildir + kaydet
     _focusNode.addListener(() {
       if (_focusNode.hasFocus) {
         widget.onInteract?.call(true);
@@ -79,7 +81,26 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     super.dispose();
   }
 
-  // ==== font fit ====
+  // ---- Radius'ı orantılı uygula: 0..0.5 => minSide * factor, >1 => px (eski kayıt)
+  double _effectiveRadius(BoxItem b) {
+    final minSide = b.width < b.height ? b.width : b.height;
+    final r = b.borderRadius;
+    final asPx = (r <= 1.0) ? (r * minSide) : r; // factor -> px
+    final maxR = minSide / 2;
+    return asPx.clamp(0, maxR);
+  }
+
+  // Eski px kaydı görürse faktöre çevir (panel açılmadan önce çağıracağız)
+  void _normalizeRadiusToFactor(BoxItem b) {
+    final minSide = b.width < b.height ? b.width : b.height;
+    if (minSide <= 0) return;
+    if (b.borderRadius > 1.0) {
+      final factor = (b.borderRadius / minSide).clamp(0.0, 0.5);
+      b.borderRadius = factor;
+    }
+  }
+
+  // ==== font fit (tek satır) ====
   double _fitFontSize(BoxItem b) {
     final key = [
       b.text,
@@ -114,8 +135,9 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
         textAlign: b.align,
         maxLines: 1,
       );
-      tp.layout(maxWidth: b.width);
-      return tp.size.width <= b.width + 0.5 && tp.size.height <= b.height + 0.5;
+      tp.layout(maxWidth: b.width - (_padH * 2));
+      return tp.size.width <= (b.width - _padH * 2) + 0.5 &&
+             tp.size.height <= (b.height - _padV * 2) + 0.5;
     }
 
     for (int i = 0; i < 25; i++) {
@@ -132,6 +154,27 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     return lo;
   }
 
+  // ==== ölçüm (tek satır) ====
+  Size _measureSingleLine(BoxItem b) {
+    final tp = TextPainter(
+      text: TextSpan(
+        text: b.text.isEmpty ? 'Metin...' : b.text,
+        style: TextStyle(
+          fontSize: (b.autoFontSize ? _fitFontSize(b) : b.fixedFontSize).clamp(6, 2000),
+          fontFamily: b.fontFamily,
+          fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
+          fontStyle:  b.italic ? FontStyle.italic : FontStyle.normal,
+          decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+
+    // iç padding ekle
+    return Size(tp.width + _padH * 2, tp.height + _padV * 2);
+  }
+
   // ==== gestures ====
   void _onScaleStart(ScaleStartDetails d) {
     widget.onInteract?.call(true);
@@ -145,10 +188,11 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
 
   void _onScaleUpdate(ScaleUpdateDetails d) {
     final b = widget.box;
+
+    // Edit + klavye açıkken geçici sabitleme (sürükleme/rotate kapalı)
     final kb = MediaQuery.of(context).viewInsets.bottom;
     final floatingEdit = widget.isEditing && kb > 0 && b.type == "textbox";
 
-    // Floating edit modunda sürüklemeyi/rotasyonu kilitle
     if (!floatingEdit) {
       if (d.pointerCount == 1) {
         if (d.focalPointDelta.distanceSquared >= 0.25) {
@@ -157,7 +201,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
       }
       if (d.pointerCount >= 2) {
         if (d.scale > 0) {
-          b.width = (_startW * d.scale).clamp(24.0, 4096.0);
+          b.width  = (_startW * d.scale).clamp(24.0, 4096.0);
           b.height = (_startH * d.scale).clamp(24.0, 4096.0);
           _fitKey = null;
         }
@@ -166,13 +210,8 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     }
 
     _lastGlobalPoint = d.focalPoint;
-
     final over = widget.isOverTrash(_lastGlobalPoint!);
-    if (over) {
-      _overTrashFrames++;
-    } else {
-      _overTrashFrames = 0;
-    }
+    _overTrashFrames = over ? (_overTrashFrames + 1) : 0;
     widget.onDraggingOverTrash?.call(over);
 
     widget.onUpdate();
@@ -180,11 +219,8 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
 
   void _onScaleEnd(ScaleEndDetails d) {
     bool shouldDelete = false;
-
     final over = _lastGlobalPoint != null && widget.isOverTrash(_lastGlobalPoint!);
-    if (_overTrashFrames >= 2 && over) {
-      shouldDelete = true;
-    }
+    if (_overTrashFrames >= 2 && over) shouldDelete = true;
 
     widget.onDraggingOverTrash?.call(false);
     widget.onInteract?.call(false);
@@ -193,38 +229,18 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
       widget.onDelete();
       return;
     }
-
     widget.onSave();
   }
 
-  // ==== ölçüm (tek satır) ====
-  Size _measureSingleLine(BoxItem b) {
-    final tp = TextPainter(
-      text: TextSpan(
-        text: b.text.isEmpty ? 'Metin...' : b.text,
-        style: TextStyle(
-          fontSize: (b.autoFontSize ? _fitFontSize(b) : b.fixedFontSize).clamp(6, 2000),
-          fontFamily: b.fontFamily,
-          fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
-          fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
-          decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-      maxLines: 1,
-    )..layout();
-
-    return Size(tp.width + 24, tp.height + 12);
-  }
-
-  // ==== paneller ====
+  // ==== image panel ====
   Future<void> _openImageEditPanel() async {
     widget.onInteract?.call(true);
+    _normalizeRadiusToFactor(widget.box); // px -> factor
     await showModalBottomSheet(
       context: context,
       builder: (_) {
         final b = widget.box;
-        double localRadius = b.borderRadius;
+        double localRadiusFactor = b.borderRadius.clamp(0.0, 0.5); // 0..0.5
         double localOpacity = b.imageOpacity;
 
         return StatefulBuilder(builder: (_, setSt) {
@@ -234,39 +250,36 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text("Resim Ayarları",
-                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Text("Resim Ayarları", style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
 
-                  // Radius (anlık uygula)
+                  // Radius (%)
                   Row(
                     children: [
-                      const Text("Radius"),
+                      const Text("Radius (%)"),
                       Expanded(
                         child: Slider(
-                          value: localRadius,
-                          min: 0,
-                          max: 64,
+                          value: localRadiusFactor,
+                          min: 0, max: 0.5,
                           onChanged: (v) {
-                            setSt(() => localRadius = v);
-                            b.borderRadius = v;
+                            setSt(() => localRadiusFactor = v);
+                            b.borderRadius = v;              // factor
                             widget.onUpdate();
-                            widget.onSave(); // anlık kaydet
+                            widget.onSave();
                           },
                         ),
                       ),
                     ],
                   ),
 
-                  // Opacity (anlık uygula)
+                  // Opacity
                   Row(
                     children: [
                       const Text("Opacity"),
                       Expanded(
                         child: Slider(
                           value: localOpacity,
-                          min: 0,
-                          max: 1,
+                          min: 0, max: 1,
                           onChanged: (v) {
                             setSt(() => localOpacity = v);
                             b.imageOpacity = v;
@@ -305,7 +318,6 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                     ],
                   ),
 
-                  const SizedBox(height: 8),
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton(
@@ -322,25 +334,22 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     ).whenComplete(() => widget.onInteract?.call(false));
   }
 
+  // ==== text panel ====
   Future<void> _openTextBoxEditPanel() async {
     widget.onInteract?.call(true);
+    _normalizeRadiusToFactor(widget.box); // px -> factor
     await showModalBottomSheet(
       context: context,
       builder: (_) {
         final b = widget.box;
-        double localRadius = b.borderRadius;
+        double localRadiusFactor = b.borderRadius.clamp(0.0, 0.5);
         double localBgOpacity = b.backgroundOpacity;
         int localBgColor = b.backgroundColor;
 
         Color cFrom(int v) => Color(v);
         final swatches = <int>[
-          0xFFFFFFFF,
-          0xFFF8F9FA,
-          0xFFFFF3CD,
-          0xFFE3F2FD,
-          0xFFE8F5E9,
-          0xFFFFEBEE,
-          0xFF212121,
+          0xFFFFFFFF, 0xFFF8F9FA, 0xFFFFF3CD,
+          0xFFE3F2FD, 0xFFE8F5E9, 0xFFFFEBEE, 0xFF212121,
         ];
 
         return StatefulBuilder(builder: (_, setSt) {
@@ -350,11 +359,10 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text("Metin Kutusu Ayarları",
-                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Text("Metin Kutusu Ayarları", style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
 
-                  // BG color (anında uygula)
+                  // BG color
                   SizedBox(
                     height: 40,
                     child: ListView.separated(
@@ -371,14 +379,11 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                             widget.onSave();
                           },
                           child: Container(
-                            width: 40,
-                            height: 40,
+                            width: 40, height: 40,
                             decoration: BoxDecoration(
                               color: cFrom(color),
                               border: Border.all(
-                                color: color == localBgColor
-                                    ? Colors.teal
-                                    : Colors.black12,
+                                color: color == localBgColor ? Colors.teal : Colors.black12,
                                 width: color == localBgColor ? 2 : 1,
                               ),
                               borderRadius: BorderRadius.circular(6),
@@ -389,17 +394,14 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                     ),
                   ),
 
-                  const SizedBox(height: 8),
-
-                  // BG opacity (anında uygula)
+                  // BG opacity
                   Row(
                     children: [
                       const Text("BG Opacity"),
                       Expanded(
                         child: Slider(
                           value: localBgOpacity,
-                          min: 0,
-                          max: 1,
+                          min: 0, max: 1,
                           onChanged: (v) {
                             setSt(() => localBgOpacity = v);
                             b.backgroundOpacity = v;
@@ -411,17 +413,16 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                     ],
                   ),
 
-                  // radius (anında uygula)
+                  // Radius (%)
                   Row(
                     children: [
-                      const Text("Radius"),
+                      const Text("Radius (%)"),
                       Expanded(
                         child: Slider(
-                          value: localRadius,
-                          min: 0,
-                          max: 64,
+                          value: localRadiusFactor,
+                          min: 0, max: 0.5,
                           onChanged: (v) {
-                            setSt(() => localRadius = v);
+                            setSt(() => localRadiusFactor = v);
                             b.borderRadius = v;
                             widget.onUpdate();
                             widget.onSave();
@@ -430,8 +431,6 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                       ),
                     ],
                   ),
-
-                  const SizedBox(height: 8),
 
                   // Z-index
                   Row(
@@ -458,7 +457,6 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                     ],
                   ),
 
-                  const SizedBox(height: 8),
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton(
@@ -475,7 +473,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     ).whenComplete(() => widget.onInteract?.call(false));
   }
 
-  // ==== içerik ====
+  // ==== content ====
   Widget _buildContent(BoxItem b) {
     if (b.type == "image") {
       if (b.imageBytes == null || b.imageBytes!.isEmpty) {
@@ -486,28 +484,19 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
         child: SizedBox.expand(
           child: Image.memory(
             b.imageBytes!,
-            fit: BoxFit.cover, // cover + kırp
+            fit: BoxFit.cover,
             gaplessPlayback: true,
           ),
         ),
       );
     }
 
-    // text
     final fitted = b.autoFontSize ? _fitFontSize(b) : b.fixedFontSize;
 
     return Align(
       alignment: Alignment(
-        b.align == TextAlign.left
-            ? -1
-            : b.align == TextAlign.right
-                ? 1
-                : 0,
-        b.vAlign == 'top'
-            ? -1
-            : b.vAlign == 'bottom'
-                ? 1
-                : 0,
+        b.align == TextAlign.left ? -1 : (b.align == TextAlign.right ? 1 : 0),
+        b.vAlign == 'top' ? -1 : (b.vAlign == 'bottom' ? 1 : 0),
       ),
       child: widget.isEditing
           ? TextField(
@@ -519,20 +508,21 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
               decoration: const InputDecoration(
                 border: InputBorder.none,
                 hintText: "Metin...",
+                isCollapsed: true,
+                contentPadding: EdgeInsets.zero,
               ),
               style: TextStyle(
-                fontSize:
-                    (b.autoFontSize ? _fitFontSize(b) : b.fixedFontSize).clamp(6, 2000),
+                fontSize: (b.autoFontSize ? _fitFontSize(b) : b.fixedFontSize).clamp(6, 2000),
                 fontFamily: b.fontFamily,
                 fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
-                fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
+                fontStyle:  b.italic ? FontStyle.italic : FontStyle.normal,
                 decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
                 color: Color(b.textColor),
               ),
               onChanged: (val) {
                 b.text = val;
 
-                // tek satır ölç, belli sınıra kadar kutuyu büyüt
+                // kutuyu metne göre büyüt (sınırlar içinde)
                 final s = _measureSingleLine(b);
                 final media = MediaQuery.of(context);
                 final kb = media.viewInsets.bottom;
@@ -544,7 +534,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                   b.width = s.width.clamp(24.0, maxWWhileEditing);
                   b.height = s.height.clamp(24.0, maxHWhileEditing);
                 } else {
-                  if (s.width > b.width) b.width = s.width;
+                  if (s.width > b.width)  b.width = s.width;
                   if (s.height > b.height) b.height = s.height;
                 }
 
@@ -563,14 +553,80 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                 fontFamily: b.fontFamily,
                 fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
                 fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
-                decoration:
-                    b.underline ? TextDecoration.underline : TextDecoration.none,
+                decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
                 color: Color(b.textColor),
               ),
             ),
     );
   }
 
+  // ==== resize handles ====
+  List<Widget> _buildResizeHandles(BoxItem box) {
+    const double s = 20;
+    final List<Widget> hs = [];
+
+    void add(double left, double top, void Function(double dx, double dy) onDrag) {
+      hs.add(Positioned(
+        left: left,
+        top: top,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onPanStart: (_) => widget.onInteract?.call(true),
+          onPanUpdate: (d) {
+            onDrag(d.delta.dx, d.delta.dy);
+            _fitKey = null;
+            widget.onUpdate();
+          },
+          onPanEnd: (_) {
+            widget.onInteract?.call(false);
+            widget.onSave();
+          },
+          child: Container(width: s, height: s, color: Colors.tealAccent.withOpacity(0.9)),
+        ),
+      ));
+    }
+
+    // köşeler
+    add(-s / 2, -s / 2, (dx, dy) { // sol-üst
+      box.width = (box.width - dx).clamp(24.0, 4096.0);
+      box.height = (box.height - dy).clamp(24.0, 4096.0);
+      box.position += Offset(dx, dy);
+    });
+    add(box.width - s / 2, -s / 2, (dx, dy) { // sağ-üst
+      box.width = (box.width + dx).clamp(24.0, 4096.0);
+      box.height = (box.height - dy).clamp(24.0, 4096.0);
+      box.position += Offset(0, dy);
+    });
+    add(-s / 2, box.height - s / 2, (dx, dy) { // sol-alt
+      box.width = (box.width - dx).clamp(24.0, 4096.0);
+      box.height = (box.height + dy).clamp(24.0, 4096.0);
+      box.position += Offset(dx, 0);
+    });
+    add(box.width - s / 2, box.height - s / 2, (dx, dy) { // sağ-alt
+      box.width = (box.width + dx).clamp(24.0, 4096.0);
+      box.height = (box.height + dy).clamp(24.0, 4096.0);
+    });
+
+    // kenarlar
+    add(box.width / 2 - s / 2, -s / 2, (dx, dy) { // üst
+      box.height = (box.height - dy).clamp(24.0, 4096.0);
+      box.position += Offset(0, dy);
+    });
+    add(box.width / 2 - s / 2, box.height - s / 2, (dx, dy) { // alt
+      box.height = (box.height + dy).clamp(24.0, 4096.0);
+    });
+    add(-s / 2, box.height / 2 - s / 2, (dx, dy) { // sol
+      box.width = (box.width - dx).clamp(24.0, 4096.0);
+      box.position += Offset(dx, 0);
+    });
+    add(box.width - s / 2, box.height / 2 - s / 2, (dx, dy) { // sağ
+      box.width = (box.width + dx).clamp(24.0, 4096.0);
+    });
+
+    return hs;
+  }
+
+  // ==== build ====
   @override
   Widget build(BuildContext context) {
     final b = widget.box;
@@ -580,9 +636,9 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     final screen = media.size;
     const toolbarH = 48.0;
 
-    final floatingEdit = widget.isEditing && kb > 0 && b.type == "textbox";
+    final floatingEdit = widget.isEditing && b.type == "textbox" && kb > 0;
 
-    // Floating konum: klavyenin bittiği yerin hemen üstü
+    // klavye üstü konum
     final floatLeft = 16.0;
     final availableH = screen.height - kb;
     final floatTop =
@@ -601,8 +657,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
         onScaleUpdate: _onScaleUpdate,
         onScaleEnd: _onScaleEnd,
         onDoubleTap: () {
-          // paneli aç + stream’e etkileşimde olduğumuzu söyle
-          if (widget.box.type == "image") {
+          if (b.type == "image") {
             _openImageEditPanel();
           } else {
             _openTextBoxEditPanel();
@@ -626,8 +681,8 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                // inline toolbar (sadece edit ve textbox iken)
-                if (floatingEdit && b.type == "textbox")
+                // Toolbar: edit modunda her zaman göster
+                if (widget.isEditing && b.type == "textbox")
                   Positioned(
                     left: 0,
                     top: -toolbarH,
@@ -635,10 +690,11 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                   ),
 
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(b.borderRadius),
+                  borderRadius: BorderRadius.circular(_effectiveRadius(b)),
                   child: Container(
                     width: b.width,
                     height: b.height,
+                    padding: const EdgeInsets.symmetric(horizontal: _padH, vertical: _padV),
                     color: Color(b.backgroundColor)
                         .withAlpha((b.backgroundOpacity * 255).clamp(0, 255).round()),
                     alignment: Alignment.center,
@@ -646,8 +702,8 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                   ),
                 ),
 
-                // köşe/kenar handle’ları (seçiliyken)
-                // Not: Handle’ları eski sürümde bıraktık; burada görsel sadeleştirme istedinizse kapatabilirsiniz.
+                // Handle'lar (seçiliyken)
+                if (b.isSelected) ..._buildResizeHandles(b),
               ],
             ),
           ),
@@ -656,7 +712,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     );
   }
 
-  // Basit inline text toolbar
+  // ---- inline text toolbar ----
   Widget _buildTextInlineToolbar(BoxItem b) {
     return Material(
       elevation: 3,
@@ -671,37 +727,33 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // text color (küçük palet)
+            // text color paleti (küçük)
             GestureDetector(
               onTap: () {
-                final colors = [0xFF000000, 0xFF2962FF, 0xFFD81B60, 0xFF2E7D32, 0xFFF9A825, 0xFFFFFFFF];
+                final colors = [0xFF000000,0xFF2962FF,0xFFD81B60,0xFF2E7D32,0xFFF9A825,0xFFFFFFFF];
                 showModalBottomSheet(
                   context: context,
                   builder: (_) => SafeArea(
                     child: Padding(
                       padding: const EdgeInsets.all(12),
                       child: Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: colors
-                            .map((c) => GestureDetector(
-                                  onTap: () {
-                                    b.textColor = c;
-                                    widget.onUpdate();
-                                    widget.onSave();
-                                    Navigator.pop(context);
-                                  },
-                                  child: Container(
-                                    width: 32,
-                                    height: 32,
-                                    decoration: BoxDecoration(
-                                      color: Color(c),
-                                      border: Border.all(color: Colors.black12),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                  ),
-                                ))
-                            .toList(),
+                        spacing: 8, runSpacing: 8,
+                        children: colors.map((c) => GestureDetector(
+                          onTap: (){
+                            b.textColor = c;
+                            widget.onUpdate();
+                            widget.onSave();
+                            Navigator.pop(context);
+                          },
+                          child: Container(
+                            width: 32, height: 32,
+                            decoration: BoxDecoration(
+                              color: Color(c),
+                              border: Border.all(color: Colors.black12),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        )).toList(),
                       ),
                     ),
                   ),
@@ -709,87 +761,54 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
               },
               child: const Icon(Icons.color_lens, size: 20),
             ),
+
             IconButton(
               icon: Icon(Icons.format_bold, size: 20, color: b.bold ? Colors.teal : null),
-              onPressed: () {
-                b.bold = !b.bold;
-                widget.onUpdate();
-                widget.onSave();
-              },
+              onPressed: () { b.bold = !b.bold; widget.onUpdate(); widget.onSave(); },
             ),
             IconButton(
               icon: Icon(Icons.format_italic, size: 20, color: b.italic ? Colors.teal : null),
-              onPressed: () {
-                b.italic = !b.italic;
-                widget.onUpdate();
-                widget.onSave();
-              },
+              onPressed: () { b.italic = !b.italic; widget.onUpdate(); widget.onSave(); },
             ),
             IconButton(
               icon: Icon(Icons.format_underline, size: 20, color: b.underline ? Colors.teal : null),
-              onPressed: () {
-                b.underline = !b.underline;
-                widget.onUpdate();
-                widget.onSave();
-              },
+              onPressed: () { b.underline = !b.underline; widget.onUpdate(); widget.onSave(); },
             ),
+
             const VerticalDivider(),
+
             IconButton(
               icon: const Icon(Icons.format_align_left, size: 20),
-              onPressed: () {
-                b.align = TextAlign.left;
-                widget.onUpdate();
-                widget.onSave();
-              },
+              onPressed: () { b.align = TextAlign.left; widget.onUpdate(); widget.onSave(); },
             ),
             IconButton(
               icon: const Icon(Icons.format_align_center, size: 20),
-              onPressed: () {
-                b.align = TextAlign.center;
-                widget.onUpdate();
-                widget.onSave();
-              },
+              onPressed: () { b.align = TextAlign.center; widget.onUpdate(); widget.onSave(); },
             ),
             IconButton(
               icon: const Icon(Icons.format_align_right, size: 20),
-              onPressed: () {
-                b.align = TextAlign.right;
-                widget.onUpdate();
-                widget.onSave();
-              },
+              onPressed: () { b.align = TextAlign.right; widget.onUpdate(); widget.onSave(); },
             ),
+
             const VerticalDivider(),
+
             IconButton(
               icon: const Icon(Icons.vertical_align_top, size: 20),
-              onPressed: () {
-                b.vAlign = 'top';
-                widget.onUpdate();
-                widget.onSave();
-              },
+              onPressed: () { b.vAlign = 'top'; widget.onUpdate(); widget.onSave(); },
             ),
             IconButton(
               icon: const Icon(Icons.vertical_align_center, size: 20),
-              onPressed: () {
-                b.vAlign = 'middle';
-                widget.onUpdate();
-                widget.onSave();
-              },
+              onPressed: () { b.vAlign = 'middle'; widget.onUpdate(); widget.onSave(); },
             ),
             IconButton(
               icon: const Icon(Icons.vertical_align_bottom, size: 20),
-              onPressed: () {
-                b.vAlign = 'bottom';
-                widget.onUpdate();
-                widget.onSave();
-              },
+              onPressed: () { b.vAlign = 'bottom'; widget.onUpdate(); widget.onSave(); },
             ),
+
             const VerticalDivider(),
+
             TextButton(
-              onPressed: () {
-                b.autoFontSize = !b.autoFontSize;
-                widget.onUpdate();
-                widget.onSave();
-              },
+              onPressed: () { b.autoFontSize = !b.autoFontSize; widget.onUpdate(); widget.onSave(); },
               child: Text(b.autoFontSize ? "Auto" : "Fixed"),
             ),
             if (!b.autoFontSize)
@@ -797,13 +816,8 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                 width: 140,
                 child: Slider(
                   value: b.fixedFontSize,
-                  min: 6,
-                  max: 200,
-                  onChanged: (v) {
-                    b.fixedFontSize = v;
-                    widget.onUpdate();
-                    widget.onSave();
-                  },
+                  min: 6, max: 200,
+                  onChanged: (v) { b.fixedFontSize = v; widget.onUpdate(); widget.onSave(); },
                 ),
               ),
           ],
