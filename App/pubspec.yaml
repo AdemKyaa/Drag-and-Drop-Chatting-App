@@ -25,6 +25,7 @@ dependencies:
 
   # Galeriden fotoğraf seçmek için
   image_picker: ^1.1.2
+  image: ^4.2.0
 
   # UI için ekstra paketler (opsiyonel)
   cupertino_icons: ^1.0.8
