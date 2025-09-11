@@ -251,8 +251,9 @@ class _ChatScreenState extends State<ChatScreen> {
         ],
       ),
       body: GestureDetector(
-        behavior: HitTestBehavior.translucent,
+        behavior: HitTestBehavior.deferToChild, // ⬅️ ESKİ: translucent
         onTap: () {
+          // boşluğa basınca seçimleri bırak
           FocusScope.of(context).unfocus();
           setState(() {
             for (var b in _boxes) b.isSelected = false;
@@ -262,7 +263,8 @@ class _ChatScreenState extends State<ChatScreen> {
         },
         child: Stack(
           children: [
-            ...boxesSorted.map((box) {
+            // ⬇️ z’ye göre sıralı çizim, diğer kullanıcıya eklenenler zaten snapshots ile gelir
+            ...([..._boxes]..sort((a,b)=>a.z.compareTo(b.z))).map((box) {
               return ResizableTextBox(
                 key: ValueKey(box.id),
                 box: box,
@@ -285,8 +287,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   key: _trashKey,
                   height: 100,
                   color: _draggingOverTrash
-                      ? Colors.red.withAlpha((0.5 * 255).round())
-                      : Colors.red.withAlpha((0.2 * 255).round()),
+                    ? Colors.red.withAlpha((0.5 * 255).round())
+                    : Colors.red.withAlpha((0.2 * 255).round()),
                   child: const Center(
                     child: Icon(Icons.delete, size: 40, color: Colors.red),
                   ),

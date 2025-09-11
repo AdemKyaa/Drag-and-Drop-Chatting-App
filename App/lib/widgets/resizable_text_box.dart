@@ -31,8 +31,12 @@ class ResizableTextBox extends StatefulWidget {
 }
 
 class _ResizableTextBoxState extends State<ResizableTextBox> {
-  static const double _padH = 12; // text padding
+  // padding (text kutuları için)
+  static const double _padH = 12;
   static const double _padV = 6;
+
+  // toolbar yüksekliği
+  static const double _toolbarH = 48;
 
   int _overTrashFrames = 0;
   late TextEditingController _controller;
@@ -81,23 +85,13 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     super.dispose();
   }
 
-  // ---- Radius'ı orantılı uygula: 0..0.5 => minSide * factor, >1 => px (eski kayıt)
+  // ---- Radius'ı orantılı uygula: 0..0.5 => minSide * factor, >1 => px (eski kayıt ile uyum)
   double _effectiveRadius(BoxItem b) {
     final minSide = b.width < b.height ? b.width : b.height;
     final r = b.borderRadius;
-    final asPx = (r <= 1.0) ? (r * minSide) : r; // factor -> px
+    final asPx = (r <= 1.0) ? (r * minSide) : r;
     final maxR = minSide / 2;
     return asPx.clamp(0, maxR);
-  }
-
-  // Eski px kaydı görürse faktöre çevir (panel açılmadan önce çağıracağız)
-  void _normalizeRadiusToFactor(BoxItem b) {
-    final minSide = b.width < b.height ? b.width : b.height;
-    if (minSide <= 0) return;
-    if (b.borderRadius > 1.0) {
-      final factor = (b.borderRadius / minSide).clamp(0.0, 0.5);
-      b.borderRadius = factor;
-    }
   }
 
   // ==== font fit (tek satır) ====
@@ -142,11 +136,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
 
     for (int i = 0; i < 25; i++) {
       final mid = (lo + hi) / 2;
-      if (fits(mid)) {
-        lo = mid;
-      } else {
-        hi = mid;
-      }
+      if (fits(mid)) lo = mid; else hi = mid;
     }
 
     _fitKey = key;
@@ -189,7 +179,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
   void _onScaleUpdate(ScaleUpdateDetails d) {
     final b = widget.box;
 
-    // Edit + klavye açıkken geçici sabitleme (sürükleme/rotate kapalı)
+    // klavye açık + textbox edit iken kutuyu sabit tut (panelle çakışmasın)
     final kb = MediaQuery.of(context).viewInsets.bottom;
     final floatingEdit = widget.isEditing && kb > 0 && b.type == "textbox";
 
@@ -230,6 +220,301 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
       return;
     }
     widget.onSave();
+  }
+
+  // ==== content ====
+  Widget _buildContent(BoxItem b) {
+    if (b.type == "image") {
+      if (b.imageBytes == null || b.imageBytes!.isEmpty) {
+        return const Text("Resim yükleniyor...", style: TextStyle(color: Colors.grey));
+      }
+      return SizedBox.expand(
+        child: Opacity(
+          opacity: b.imageOpacity.clamp(0, 1),
+          child: Image.memory(
+            b.imageBytes!,
+            fit: BoxFit.cover,           // alanı tamamen kapla
+            gaplessPlayback: true,
+          ),
+        ),
+      );
+    }
+
+    final fitted = b.autoFontSize ? _fitFontSize(b) : b.fixedFontSize;
+
+    return Align(
+      alignment: Alignment(
+        b.align == TextAlign.left ? -1 : (b.align == TextAlign.right ? 1 : 0),
+        b.vAlign == 'top' ? -1 : (b.vAlign == 'bottom' ? 1 : 0),
+      ),
+      child: widget.isEditing
+          ? TextField(
+              controller: _controller,
+              focusNode: _focusNode,
+              autofocus: true,
+              maxLines: 1,
+              textAlign: b.align,
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+                hintText: "Metin...",
+                isCollapsed: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+              style: TextStyle(
+                fontSize: (b.autoFontSize ? _fitFontSize(b) : b.fixedFontSize).clamp(6, 2000),
+                fontFamily: b.fontFamily,
+                fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
+                fontStyle:  b.italic ? FontStyle.italic : FontStyle.normal,
+                decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+                color: Color(b.textColor),
+              ),
+              onChanged: (val) {
+                b.text = val;
+
+                // kutuyu metne göre büyüt (sınırlar içinde)
+                final s = _measureSingleLine(b);
+                final media = MediaQuery.of(context);
+                final kb = media.viewInsets.bottom;
+                final screen = media.size;
+                final maxWWhileEditing = screen.width - 32;
+                final maxHWhileEditing = (screen.height - kb) * 0.35;
+
+                if (kb > 0) {
+                  b.width = s.width.clamp(24.0, maxWWhileEditing);
+                  b.height = s.height.clamp(24.0, maxHWhileEditing);
+                } else {
+                  if (s.width > b.width)  b.width = s.width;
+                  if (s.height > b.height) b.height = s.height;
+                }
+
+                _fitKey = null;
+                widget.onUpdate();
+              },
+              onSubmitted: (_) => widget.onSave(),
+            )
+          : Text(
+              b.text.isEmpty ? "Metin..." : b.text,
+              maxLines: 1,
+              overflow: TextOverflow.visible,
+              softWrap: false,
+              style: TextStyle(
+                fontSize: fitted,
+                fontFamily: b.fontFamily,
+                fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
+                fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
+                decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+                color: Color(b.textColor),
+              ),
+            ),
+    );
+  }
+
+  // ==== resize handles ====
+  List<Widget> _buildResizeHandles(BoxItem box) {
+    const double s = 16;
+    const double a = 32;
+    final List<Widget> hs = [];
+
+    void add(double left, double top, void Function(double dx, double dy) onDrag) {
+      hs.add(Positioned(
+        left: left,
+        top: top,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onPanStart: (_) => widget.onInteract?.call(true),
+          onPanUpdate: (d) {
+            onDrag(d.delta.dx, d.delta.dy);
+            _fitKey = null;
+            widget.onUpdate();
+          },
+          onPanEnd: (_) {
+            widget.onInteract?.call(false);
+            widget.onSave();
+          },
+          child: Container(
+            width: s,
+            height: s,
+            decoration: BoxDecoration(
+              color: const Color.fromARGB(120, 0, 0, 0),  // siyah
+              shape: BoxShape.circle,    // ✅ %100 radius (daire)
+              border: Border.all(color: Colors.white70, width: 1),
+            ),
+          ),
+        ),
+      ));
+    }
+
+    // köşeler
+    add(-s / 2 + a, -s / 2 + a, (dx, dy) { // sol-üst
+      box.width = (box.width - dx).clamp(24.0, 4096.0);
+      box.height = (box.height - dy).clamp(24.0, 4096.0);
+      box.position += Offset(dx, dy);
+    });
+    add(box.width - s / 2 - a, -s / 2 + a, (dx, dy) { // sağ-üst
+      box.width = (box.width + dx).clamp(24.0, 4096.0);
+      box.height = (box.height - dy).clamp(24.0, 4096.0);
+      box.position += Offset(0, dy);
+    });
+    add(-s / 2 + a, box.height - s / 2 - a, (dx, dy) { // sol-alt
+      box.width = (box.width - dx).clamp(24.0, 4096.0);
+      box.height = (box.height + dy).clamp(24.0, 4096.0);
+      box.position += Offset(dx, 0);
+    });
+    add(box.width - s / 2 - a, box.height - s / 2 - a, (dx, dy) { // sağ-alt
+      box.width = (box.width + dx).clamp(24.0, 4096.0);
+      box.height = (box.height + dy).clamp(24.0, 4096.0);
+    });
+
+    // kenarlar
+    add(box.width / 2 - s / 2, -s / 2 + a, (dx, dy) { // üst
+      box.height = (box.height - dy).clamp(24.0, 4096.0);
+      box.position += Offset(0, dy);
+    });
+    add(box.width / 2 - s / 2, box.height - s / 2 - a, (dx, dy) { // alt
+      box.height = (box.height + dy).clamp(24.0, 4096.0);
+    });
+    add(-s / 2 + a, box.height / 2 - s / 2, (dx, dy) { // sol
+      box.width = (box.width - dx).clamp(24.0, 4096.0);
+      box.position += Offset(dx, 0);
+    });
+    add(box.width - s / 2 - a, box.height / 2 - s / 2, (dx, dy) { // sağ
+      box.width = (box.width + dx).clamp(24.0, 4096.0);
+    });
+
+    return hs;
+  }
+
+  // ==== inline text toolbar (scrollable + kendi hit-area'sı) ====
+  Widget _buildTextInlineToolbar(BoxItem b) {
+    return Material(
+      elevation: 3,
+      borderRadius: BorderRadius.circular(8),
+      child: GestureDetector(
+        // panelin kendi alanı tıklanabilir olsun, üst parent'a gitmesin
+        behavior: HitTestBehavior.opaque,
+        onTap: () {}, // arena'yı sahiplenmesi için boş onTap
+        child: Container(
+          height: _toolbarH,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // text color paleti (küçük)
+                IconButton(
+                  icon: const Icon(Icons.color_lens, size: 20),
+                  onPressed: () {
+                    final colors = [0xFF000000,0xFF2962FF,0xFFD81B60,0xFF2E7D32,0xFFF9A825,0xFFFFFFFF];
+                    showModalBottomSheet(
+                      context: context,
+                      builder: (_) => SafeArea(
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Wrap(
+                            spacing: 8, runSpacing: 8,
+                            children: colors.map((c) => GestureDetector(
+                              onTap: (){
+                                b.textColor = c;
+                                widget.onUpdate();
+                                widget.onSave();
+                                Navigator.pop(context);
+                              },
+                              child: Container(
+                                width: 32, height: 32,
+                                decoration: BoxDecoration(
+                                  color: Color(c),
+                                  border: Border.all(color: Colors.black12),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                            )).toList(),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+
+                IconButton(
+                  icon: Icon(Icons.format_bold, size: 20, color: b.bold ? Colors.teal : null),
+                  onPressed: () { b.bold = !b.bold; widget.onUpdate(); widget.onSave(); },
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_italic, size: 20, color: b.italic ? Colors.teal : null),
+                  onPressed: () { b.italic = !b.italic; widget.onUpdate(); widget.onSave(); },
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_underline, size: 20, color: b.underline ? Colors.teal : null),
+                  onPressed: () { b.underline = !b.underline; widget.onUpdate(); widget.onSave(); },
+                ),
+
+                const VerticalDivider(),
+
+                IconButton(
+                  icon: const Icon(Icons.format_align_left, size: 20),
+                  onPressed: () { b.align = TextAlign.left; widget.onUpdate(); widget.onSave(); },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.format_align_center, size: 20),
+                  onPressed: () { b.align = TextAlign.center; widget.onUpdate(); widget.onSave(); },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.format_align_right, size: 20),
+                  onPressed: () { b.align = TextAlign.right; widget.onUpdate(); widget.onSave(); },
+                ),
+
+                const VerticalDivider(),
+
+                IconButton(
+                  icon: const Icon(Icons.vertical_align_top, size: 20),
+                  onPressed: () { b.vAlign = 'top'; widget.onUpdate(); widget.onSave(); },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.vertical_align_center, size: 20),
+                  onPressed: () { b.vAlign = 'middle'; widget.onUpdate(); widget.onSave(); },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.vertical_align_bottom, size: 20),
+                  onPressed: () { b.vAlign = 'bottom'; widget.onUpdate(); widget.onSave(); },
+                ),
+
+                const VerticalDivider(),
+
+                TextButton(
+                  onPressed: () { b.autoFontSize = !b.autoFontSize; widget.onUpdate(); widget.onSave(); },
+                  child: Text(b.autoFontSize ? "Auto" : "Fixed"),
+                ),
+                if (!b.autoFontSize)
+                  SizedBox(
+                    width: 140,
+                    child: Slider(
+                      value: b.fixedFontSize,
+                      min: 6, max: 200,
+                      onChanged: (v) { b.fixedFontSize = v; widget.onUpdate(); },
+                      onChangeEnd: (_) => widget.onSave(),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Eski px kaydı görürse faktöre çevir (panel açılmadan önce çağıracağız)
+  void _normalizeRadiusToFactor(BoxItem b) {
+    final minSide = b.width < b.height ? b.width : b.height;
+    if (minSide <= 0) return;
+    if (b.borderRadius > 1.0) {
+      final factor = (b.borderRadius / minSide).clamp(0.0, 0.5);
+      b.borderRadius = factor;
+    }
   }
 
   // ==== image panel ====
@@ -473,159 +758,6 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     ).whenComplete(() => widget.onInteract?.call(false));
   }
 
-  // ==== content ====
-  Widget _buildContent(BoxItem b) {
-    if (b.type == "image") {
-      if (b.imageBytes == null || b.imageBytes!.isEmpty) {
-        return const Text("Resim yükleniyor...", style: TextStyle(color: Colors.grey));
-      }
-      return Opacity(
-        opacity: b.imageOpacity.clamp(0, 1),
-        child: SizedBox.expand(
-          child: Image.memory(
-            b.imageBytes!,
-            fit: BoxFit.cover,
-            gaplessPlayback: true,
-          ),
-        ),
-      );
-    }
-
-    final fitted = b.autoFontSize ? _fitFontSize(b) : b.fixedFontSize;
-
-    return Align(
-      alignment: Alignment(
-        b.align == TextAlign.left ? -1 : (b.align == TextAlign.right ? 1 : 0),
-        b.vAlign == 'top' ? -1 : (b.vAlign == 'bottom' ? 1 : 0),
-      ),
-      child: widget.isEditing
-          ? TextField(
-              controller: _controller,
-              focusNode: _focusNode,
-              autofocus: true,
-              maxLines: 1,
-              textAlign: b.align,
-              decoration: const InputDecoration(
-                border: InputBorder.none,
-                hintText: "Metin...",
-                isCollapsed: true,
-                contentPadding: EdgeInsets.zero,
-              ),
-              style: TextStyle(
-                fontSize: (b.autoFontSize ? _fitFontSize(b) : b.fixedFontSize).clamp(6, 2000),
-                fontFamily: b.fontFamily,
-                fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
-                fontStyle:  b.italic ? FontStyle.italic : FontStyle.normal,
-                decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
-                color: Color(b.textColor),
-              ),
-              onChanged: (val) {
-                b.text = val;
-
-                // kutuyu metne göre büyüt (sınırlar içinde)
-                final s = _measureSingleLine(b);
-                final media = MediaQuery.of(context);
-                final kb = media.viewInsets.bottom;
-                final screen = media.size;
-                final maxWWhileEditing = screen.width - 32;
-                final maxHWhileEditing = (screen.height - kb) * 0.35;
-
-                if (kb > 0) {
-                  b.width = s.width.clamp(24.0, maxWWhileEditing);
-                  b.height = s.height.clamp(24.0, maxHWhileEditing);
-                } else {
-                  if (s.width > b.width)  b.width = s.width;
-                  if (s.height > b.height) b.height = s.height;
-                }
-
-                _fitKey = null;
-                widget.onUpdate();
-              },
-              onSubmitted: (_) => widget.onSave(),
-            )
-          : Text(
-              b.text.isEmpty ? "Metin..." : b.text,
-              maxLines: 1,
-              overflow: TextOverflow.visible,
-              softWrap: false,
-              style: TextStyle(
-                fontSize: fitted,
-                fontFamily: b.fontFamily,
-                fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
-                fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
-                decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
-                color: Color(b.textColor),
-              ),
-            ),
-    );
-  }
-
-  // ==== resize handles ====
-  List<Widget> _buildResizeHandles(BoxItem box) {
-    const double s = 20;
-    final List<Widget> hs = [];
-
-    void add(double left, double top, void Function(double dx, double dy) onDrag) {
-      hs.add(Positioned(
-        left: left,
-        top: top,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onPanStart: (_) => widget.onInteract?.call(true),
-          onPanUpdate: (d) {
-            onDrag(d.delta.dx, d.delta.dy);
-            _fitKey = null;
-            widget.onUpdate();
-          },
-          onPanEnd: (_) {
-            widget.onInteract?.call(false);
-            widget.onSave();
-          },
-          child: Container(width: s, height: s, color: Colors.tealAccent.withOpacity(0.9)),
-        ),
-      ));
-    }
-
-    // köşeler
-    add(-s / 2, -s / 2, (dx, dy) { // sol-üst
-      box.width = (box.width - dx).clamp(24.0, 4096.0);
-      box.height = (box.height - dy).clamp(24.0, 4096.0);
-      box.position += Offset(dx, dy);
-    });
-    add(box.width - s / 2, -s / 2, (dx, dy) { // sağ-üst
-      box.width = (box.width + dx).clamp(24.0, 4096.0);
-      box.height = (box.height - dy).clamp(24.0, 4096.0);
-      box.position += Offset(0, dy);
-    });
-    add(-s / 2, box.height - s / 2, (dx, dy) { // sol-alt
-      box.width = (box.width - dx).clamp(24.0, 4096.0);
-      box.height = (box.height + dy).clamp(24.0, 4096.0);
-      box.position += Offset(dx, 0);
-    });
-    add(box.width - s / 2, box.height - s / 2, (dx, dy) { // sağ-alt
-      box.width = (box.width + dx).clamp(24.0, 4096.0);
-      box.height = (box.height + dy).clamp(24.0, 4096.0);
-    });
-
-    // kenarlar
-    add(box.width / 2 - s / 2, -s / 2, (dx, dy) { // üst
-      box.height = (box.height - dy).clamp(24.0, 4096.0);
-      box.position += Offset(0, dy);
-    });
-    add(box.width / 2 - s / 2, box.height - s / 2, (dx, dy) { // alt
-      box.height = (box.height + dy).clamp(24.0, 4096.0);
-    });
-    add(-s / 2, box.height / 2 - s / 2, (dx, dy) { // sol
-      box.width = (box.width - dx).clamp(24.0, 4096.0);
-      box.position += Offset(dx, 0);
-    });
-    add(box.width - s / 2, box.height / 2 - s / 2, (dx, dy) { // sağ
-      box.width = (box.width + dx).clamp(24.0, 4096.0);
-    });
-
-    return hs;
-  }
-
   // ==== build ====
   @override
   Widget build(BuildContext context) {
@@ -634,30 +766,33 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     final media = MediaQuery.of(context);
     final kb = media.viewInsets.bottom;
     final screen = media.size;
-    const toolbarH = 48.0;
 
     final floatingEdit = widget.isEditing && b.type == "textbox" && kb > 0;
 
-    // klavye üstü konum
+    // klavye üstü konum (floating edit)
     final floatLeft = 16.0;
     final availableH = screen.height - kb;
-    final floatTop =
-        (availableH - b.height - toolbarH - 8).clamp(8.0, availableH - b.height - 8.0);
+    final topForBox = (availableH - b.height - 8).clamp(8.0, availableH - b.height - 8.0);
 
+    // toolbar gösterilecek mi?
+    final showToolbar = widget.isEditing && b.type == "textbox";
+    // dış Positioned için top/left
     final posLeft = floatingEdit ? floatLeft : b.position.dx;
-    final posTop = floatingEdit ? floatTop : b.position.dy;
-    final angle = floatingEdit ? 0.0 : b.rotation;
+    // toolbar'ı üstte göstereceğimiz için dış kapsayıcıyı biraz yukarı çekiyoruz ki toolbar da hit alabilsin
+    final posTop = (floatingEdit ? topForBox : b.position.dy) - (showToolbar ? (_toolbarH + 6) : 0);
 
     return Positioned(
       left: posLeft,
       top: posTop,
       child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
+        // önemli: panel tıklamalarını çocuklara bırak
+        behavior: HitTestBehavior.deferToChild,
         onScaleStart: _onScaleStart,
         onScaleUpdate: _onScaleUpdate,
         onScaleEnd: _onScaleEnd,
         onDoubleTap: () {
-          if (b.type == "image") {
+          // paneli aç + stream’e etkileşimde olduğumuzu söyle
+          if (widget.box.type == "image") {
             _openImageEditPanel();
           } else {
             _openTextBoxEditPanel();
@@ -674,153 +809,61 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
           }
         },
         child: Transform.rotate(
-          angle: angle,
+          angle: floatingEdit ? 0.0 : b.rotation,
           child: SizedBox(
+            // kapsayıcı yükseklik: toolbar + kutu
             width: b.width,
-            height: b.height,
+            height: b.height + (showToolbar ? (_toolbarH + 6) : 0),
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                // Toolbar: edit modunda her zaman göster
-                if (widget.isEditing && b.type == "textbox")
+                if (showToolbar)
                   Positioned(
                     left: 0,
-                    top: -toolbarH,
+                    top: 0,
                     child: _buildTextInlineToolbar(b),
                   ),
 
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(_effectiveRadius(b)),
-                  child: Container(
-                    width: b.width,
-                    height: b.height,
-                    padding: const EdgeInsets.symmetric(horizontal: _padH, vertical: _padV),
-                    color: Color(b.backgroundColor)
-                        .withAlpha((b.backgroundOpacity * 255).clamp(0, 255).round()),
-                    alignment: Alignment.center,
-                    child: _buildContent(b),
+                // asıl kutu (toolbarın altında)
+                Positioned(
+                  left: 0,
+                  top: (showToolbar ? (_toolbarH + 6) : 0),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(_effectiveRadius(b)),
+                    child: Container(
+                      width: b.width,
+                      height: b.height,
+                      padding: b.type == "image"
+                          ? EdgeInsets.zero
+                          : const EdgeInsets.symmetric(horizontal: _padH, vertical: _padV),
+                      // image ise arka planı tamamen kaldır
+                      color: b.type == "image"
+                          ? Colors.transparent
+                          : Color(b.backgroundColor)
+                              .withAlpha((b.backgroundOpacity * 255).clamp(0, 255).round()),
+                      alignment: Alignment.center,
+                      child: _buildContent(b),
+                    ),
                   ),
                 ),
 
                 // Handle'lar (seçiliyken)
-                if (b.isSelected) ..._buildResizeHandles(b),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ---- inline text toolbar ----
-  Widget _buildTextInlineToolbar(BoxItem b) {
-    return Material(
-      elevation: 3,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        height: 48,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // text color paleti (küçük)
-            GestureDetector(
-              onTap: () {
-                final colors = [0xFF000000,0xFF2962FF,0xFFD81B60,0xFF2E7D32,0xFFF9A825,0xFFFFFFFF];
-                showModalBottomSheet(
-                  context: context,
-                  builder: (_) => SafeArea(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Wrap(
-                        spacing: 8, runSpacing: 8,
-                        children: colors.map((c) => GestureDetector(
-                          onTap: (){
-                            b.textColor = c;
-                            widget.onUpdate();
-                            widget.onSave();
-                            Navigator.pop(context);
-                          },
-                          child: Container(
-                            width: 32, height: 32,
-                            decoration: BoxDecoration(
-                              color: Color(c),
-                              border: Border.all(color: Colors.black12),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                        )).toList(),
+                if (b.isSelected)
+                  Positioned(
+                    left: 0,
+                    top: (showToolbar ? (_toolbarH + 6) : 0),
+                    child: SizedBox(
+                      width: b.width,
+                      height: b.height,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: _buildResizeHandles(b),
                       ),
                     ),
                   ),
-                );
-              },
-              child: const Icon(Icons.color_lens, size: 20),
+              ],
             ),
-
-            IconButton(
-              icon: Icon(Icons.format_bold, size: 20, color: b.bold ? Colors.teal : null),
-              onPressed: () { b.bold = !b.bold; widget.onUpdate(); widget.onSave(); },
-            ),
-            IconButton(
-              icon: Icon(Icons.format_italic, size: 20, color: b.italic ? Colors.teal : null),
-              onPressed: () { b.italic = !b.italic; widget.onUpdate(); widget.onSave(); },
-            ),
-            IconButton(
-              icon: Icon(Icons.format_underline, size: 20, color: b.underline ? Colors.teal : null),
-              onPressed: () { b.underline = !b.underline; widget.onUpdate(); widget.onSave(); },
-            ),
-
-            const VerticalDivider(),
-
-            IconButton(
-              icon: const Icon(Icons.format_align_left, size: 20),
-              onPressed: () { b.align = TextAlign.left; widget.onUpdate(); widget.onSave(); },
-            ),
-            IconButton(
-              icon: const Icon(Icons.format_align_center, size: 20),
-              onPressed: () { b.align = TextAlign.center; widget.onUpdate(); widget.onSave(); },
-            ),
-            IconButton(
-              icon: const Icon(Icons.format_align_right, size: 20),
-              onPressed: () { b.align = TextAlign.right; widget.onUpdate(); widget.onSave(); },
-            ),
-
-            const VerticalDivider(),
-
-            IconButton(
-              icon: const Icon(Icons.vertical_align_top, size: 20),
-              onPressed: () { b.vAlign = 'top'; widget.onUpdate(); widget.onSave(); },
-            ),
-            IconButton(
-              icon: const Icon(Icons.vertical_align_center, size: 20),
-              onPressed: () { b.vAlign = 'middle'; widget.onUpdate(); widget.onSave(); },
-            ),
-            IconButton(
-              icon: const Icon(Icons.vertical_align_bottom, size: 20),
-              onPressed: () { b.vAlign = 'bottom'; widget.onUpdate(); widget.onSave(); },
-            ),
-
-            const VerticalDivider(),
-
-            TextButton(
-              onPressed: () { b.autoFontSize = !b.autoFontSize; widget.onUpdate(); widget.onSave(); },
-              child: Text(b.autoFontSize ? "Auto" : "Fixed"),
-            ),
-            if (!b.autoFontSize)
-              SizedBox(
-                width: 140,
-                child: Slider(
-                  value: b.fixedFontSize,
-                  min: 6, max: 200,
-                  onChanged: (v) { b.fixedFontSize = v; widget.onUpdate(); widget.onSave(); },
-                ),
-              ),
-          ],
+          ),
         ),
       ),
     );
