@@ -7,8 +7,11 @@ class BoxItem {
   double height;
   bool isSelected;
   String text;
+  String? imagePath;
+  String type; // "textbox" veya "image"
+  double rotation;
 
-  // Metin özellikleri
+  // text özellikleri
   double fontSize;
   String fontFamily;
   bool bold;
@@ -24,6 +27,9 @@ class BoxItem {
     this.height = 100,
     this.isSelected = false,
     this.text = "",
+    this.imagePath,
+    this.type = "textbox",
+    this.rotation = 0,
     this.fontSize = 18,
     this.fontFamily = "Roboto",
     this.bold = false,
@@ -33,18 +39,20 @@ class BoxItem {
     this.bullet = false,
   });
 
-  Map<String, dynamic> toJson(String conversationId, String fromId, String toId) {
+  Map<String, dynamic> toJson(String convId, String fromId, String toId) {
     return {
       "id": id,
-      "conversationId": conversationId,
+      "conversationId": convId,
       "fromId": fromId,
       "toId": toId,
-      "type": "textbox",
+      "type": type,
       "x": position.dx,
       "y": position.dy,
       "width": width,
       "height": height,
+      "rotation": rotation,
       "text": text,
+      "imagePath": imagePath,
       "fontSize": fontSize,
       "fontFamily": fontFamily,
       "bold": bold,
@@ -52,7 +60,6 @@ class BoxItem {
       "underline": underline,
       "align": align.toString(),
       "bullet": bullet,
-      // createdAt burada eklenmiyor → chat_screen içinde FieldValue.serverTimestamp() kullanıyoruz
     };
   }
 
@@ -65,7 +72,10 @@ class BoxItem {
       ),
       width: (json["width"] ?? 200).toDouble(),
       height: (json["height"] ?? 100).toDouble(),
+      rotation: (json["rotation"] ?? 0).toDouble(),
       text: json["text"] ?? "",
+      imagePath: json["imagePath"],
+      type: json["type"] ?? "textbox",
       fontSize: (json["fontSize"] ?? 18).toDouble(),
       fontFamily: json["fontFamily"] ?? "Roboto",
       bold: json["bold"] ?? false,

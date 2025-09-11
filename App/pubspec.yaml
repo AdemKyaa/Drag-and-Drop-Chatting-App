@@ -1,26 +1,38 @@
-name: chat_app
-description: "A new Flutter project."
+name: drag_and_drop_chatting_app
+description: A Flutter app with draggable/resizable text and image chat boxes.
 publish_to: 'none'
 
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.9.0
+  sdk: ">=3.4.0 <4.0.0"
 
 dependencies:
   flutter:
     sdk: flutter
-  firebase_core: ^2.24.2
-  firebase_auth: ^4.15.3
-  cloud_firestore: ^4.13.6
+
+  # Firebase core
+  firebase_core: ^3.6.0
+
+  # Firebase Authentication (eğer login/register kullanıyorsan)
+  firebase_auth: ^5.3.1
+
+  # Cloud Firestore
+  cloud_firestore: ^5.4.4
+
+  # Firebase Storage (resimler için)
+  firebase_storage: ^12.3.4
+
+  # Galeriden fotoğraf seçmek için
+  image_picker: ^1.1.2
+
+  # UI için ekstra paketler (opsiyonel)
   cupertino_icons: ^1.0.8
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
-  flutter_lints: ^5.0.0
+  flutter_lints: ^4.0.0
 
 flutter:
-
   uses-material-design: true
