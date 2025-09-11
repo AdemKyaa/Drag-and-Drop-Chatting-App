@@ -2,55 +2,62 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' show Blob;
 
+/// Tuval üzerindeki bir nesne (textbox veya image).
 class BoxItem {
+  // Kimlik
   final String id;
+
+  // Geometri
   Offset position;
   double width;
   double height;
+  double rotation; // radians
+  int z;           // z-index
   bool isSelected;
 
-  // içerik
-  String type; // "textbox" | "image"
+  // İçerik türü
+  String type;     // "textbox" | "image"
+
+  // Text içerik
   String text;
-  Uint8List? imageBytes; // Firestore Blob/bytes
 
-  // görünüm
-  double rotation;
+  // Görsel içerik (Firestore Blob / bytes)
+  Uint8List? imageBytes;
 
-  // z-öncelik (üstte görünmesi için)
-  int z;
-
-  // metin özellikleri
-  double fontSize;
+  // Metin özellikleri
+  double fontSize;        // legacy; auto/fixed ile birlikte bulunur
   String fontFamily;
   bool bold;
   bool italic;
   bool underline;
-  TextAlign align;
-  bool bullet;
+  TextAlign align;        // left | center | right
+  bool bullet;            // kullanılmıyorsa da saklı
+  String vAlign;          // 'top' | 'middle' | 'bottom'
 
-  // 🎨 stil
+  // Font boyutu modu
+  bool autoFontSize;      // true: kutuya sığacak şekilde otomatik
+  double fixedFontSize;   // auto=false iken kullanılacak boyut
+
+  // Stil
   double borderRadius;
-  int backgroundColor;          // ARGB int
-  double backgroundOpacity;     // 0..1
-  int textColor;                // ARGB int
-  double imageOpacity;          // 0..1
-
-  String vAlign;                // 'top' | 'middle' | 'bottom'
-  bool autoFontSize;            // true: otomatik sığdır
-  double fixedFontSize;         // auto=false iken kullanılacak boyut
+  int backgroundColor;      // ARGB int
+  double backgroundOpacity; // 0..1
+  int textColor;            // ARGB int
+  double imageOpacity;      // 0..1
 
   BoxItem({
     required this.id,
     required this.position,
     this.width = 200,
     this.height = 100,
+    this.rotation = 0,
+    this.z = 0,
     this.isSelected = false,
+
     this.type = "textbox",
     this.text = "",
     this.imageBytes,
-    this.rotation = 0,
-    this.z = 0,
+
     this.fontSize = 18,
     this.fontFamily = "Roboto",
     this.bold = false,
@@ -58,50 +65,61 @@ class BoxItem {
     this.underline = false,
     this.align = TextAlign.center,
     this.bullet = false,
+    this.vAlign = 'middle',
+
+    this.autoFontSize = true,
+    this.fixedFontSize = 18.0,
+
     this.borderRadius = 12,
     this.backgroundColor = 0xFFFFFFFF,
     this.backgroundOpacity = 1.0,
     this.textColor = 0xFF000000,
     this.imageOpacity = 1.0,
-    this.vAlign = 'middle',
-    this.autoFontSize = true,
-    this.fixedFontSize = 18.0,
   });
 
+  /// Firestore’a yazım için JSON.
   Map<String, dynamic> toJson(String convId, String fromId, String toId) {
     return {
       "id": id,
       "conversationId": convId,
       "fromId": fromId,
       "toId": toId,
+
       "type": type,
+      "text": text,
+      if (imageBytes != null) "imageBytes": Blob(imageBytes!),
+
       "x": position.dx,
       "y": position.dy,
       "width": width,
       "height": height,
       "rotation": rotation,
       "z": z,
-      "text": text,
-      if (imageBytes != null) "imageBytes": Blob(imageBytes!), // 👈 Blob olarak yaz
+
+      // metin
       "fontSize": fontSize,
       "fontFamily": fontFamily,
       "bold": bold,
       "italic": italic,
       "underline": underline,
-      "align": align.toString(),
+      "align": align.toString(), // "TextAlign.center" vb.
       "bullet": bullet,
-      "borderRadius": borderRadius,
-      "backgroundColor": backgroundColor,
-      "backgroundOpacity": backgroundOpacity,
-      "textColor": textColor,
-      "imageOpacity": imageOpacity,
       "vAlign": vAlign,
+
+      // stil
+      "borderRadius": borderRadius,
+      "backgroundColor": backgroundColor,      // int ARGB
+      "backgroundOpacity": backgroundOpacity,  // 0..1
+      "textColor": textColor,                  // int ARGB
+      "imageOpacity": imageOpacity,            // 0..1
+
+      // font modu
       "autoFontSize": autoFontSize,
       "fixedFontSize": fixedFontSize,
     };
   }
 
-  /// Farklı formatlardan (Blob, Uint8List, List<int>) güvenli bytes üretir.
+  /// Farklı formatlardan güvenli bytes üretir.
   static Uint8List? _bytesFrom(dynamic o) {
     if (o == null) return null;
     if (o is Uint8List) return o;
@@ -118,7 +136,7 @@ class BoxItem {
 
   factory BoxItem.fromJson(Map<String, dynamic> json) {
     return BoxItem(
-      id: json["id"] ?? "",
+      id: json["id"]?.toString() ?? "",
       position: Offset(
         (json["x"] ?? 0).toDouble(),
         (json["y"] ?? 0).toDouble(),
@@ -127,37 +145,39 @@ class BoxItem {
       height: (json["height"] as num?)?.toDouble() ?? 100.0,
       rotation: (json["rotation"] as num?)?.toDouble() ?? 0.0,
       z: (json["z"] is num)
-      ? (json["z"] as num).toInt()
-      : int.tryParse(json["z"]?.toString() ?? '') ?? 0,
+          ? (json["z"] as num).toInt()
+          : int.tryParse(json["z"]?.toString() ?? '') ?? 0,
+
       type: (json["type"] ?? "textbox") as String,
-      text: json["text"] ?? "",
+      text: (json["text"] ?? "") as String,
       imageBytes: _bytesFrom(json["imageBytes"] ?? json["imageBlob"]),
+
       fontSize: (json["fontSize"] as num?)?.toDouble() ?? 18.0,
-      fontFamily: json["fontFamily"] ?? "Roboto",
-      bold: json["bold"] ?? false,
-      italic: json["italic"] ?? false,
-      underline: json["underline"] ?? false,
-      align: _parseTextAlign(json["align"]?.toString()),
-      bullet: json["bullet"] ?? false,
+      fontFamily: (json["fontFamily"] ?? "Roboto") as String,
+      bold: (json["bold"] ?? false) as bool,
+      italic: (json["italic"] ?? false) as bool,
+      underline: (json["underline"] ?? false) as bool,
+      align: _parseTextAlign(json["align"]),
+      bullet: (json["bullet"] ?? false) as bool,
+      vAlign: (json["vAlign"] as String?) ?? 'middle',
+
+      autoFontSize: (json["autoFontSize"] as bool?) ?? true,
+      fixedFontSize: (json["fixedFontSize"] as num?)?.toDouble() ?? 18.0,
+
       borderRadius: (json["borderRadius"] as num?)?.toDouble() ?? 12.0,
       backgroundColor: (json["backgroundColor"] as int?) ?? 0xFFFFFFFF,
       backgroundOpacity: (json["backgroundOpacity"] as num?)?.toDouble() ?? 1.0,
       textColor: (json["textColor"] as int?) ?? 0xFF000000,
       imageOpacity: (json["imageOpacity"] as num?)?.toDouble() ?? 1.0,
-      vAlign: (json["vAlign"] as String?) ?? 'middle',
-      autoFontSize: (json["autoFontSize"] as bool?) ?? true,
-      fixedFontSize: (json["fixedFontSize"] as num?)?.toDouble()
-        ?? (json["fontSize"] as num?)?.toDouble()
-        ?? 18.0,
     );
   }
 
-  static TextAlign _parseTextAlign(String? value) {
+  static TextAlign _parseTextAlign(dynamic value) {
     if (value == null) return TextAlign.center;
-    final v = value.toLowerCase();
-    if (v.contains("left")) return TextAlign.left;
-    if (v.contains("right")) return TextAlign.right;
-    if (v.contains("center")) return TextAlign.center;
+    final s = value.toString().toLowerCase();
+    if (s.contains('left')) return TextAlign.left;
+    if (s.contains('right')) return TextAlign.right;
+    if (s.contains('center')) return TextAlign.center;
     return TextAlign.center;
   }
 }
