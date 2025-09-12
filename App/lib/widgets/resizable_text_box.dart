@@ -270,6 +270,12 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
 
     final fitted = b.autoFontSize ? _fitFontSize(b) : b.fixedFontSize;
 
+    final contentW = b.width  - _padH * 2;
+    final contentH = b.height - _padV * 2;
+    final displayFs = b.autoFontSize
+        ? _fitFontSizeMultiline(b, b.text, contentW, contentH)
+        : b.fixedFontSize;
+
     return Align(
       alignment: Alignment(
         b.align == TextAlign.left ? -1 : (b.align == TextAlign.right ? 1 : 0),
@@ -329,7 +335,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
               softWrap: true,
               overflow: TextOverflow.visible,
               style: TextStyle(
-                fontSize: fitted,
+                fontSize: displayFs,
                 fontFamily: b.fontFamily,
                 fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
                 fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
@@ -830,6 +836,34 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
         });
       },
     ).whenComplete(() => widget.onInteract?.call(false));
+  }
+
+  double _fitFontSizeMultiline(BoxItem b, String text, double maxW, double maxH,
+    {double minFs = 6, double maxFs = 200}) {
+    double lo = minFs, hi = maxFs;
+    TextStyle styleFor(double fs) => TextStyle(
+          fontSize: fs,
+          fontFamily: b.fontFamily,
+          fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
+          fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
+          decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+        );
+
+    bool fits(double fs) {
+      final tp = TextPainter(
+        text: TextSpan(text: text.isEmpty ? ' ' : text, style: styleFor(fs)),
+        textDirection: TextDirection.ltr,
+        textAlign: b.align,
+        maxLines: null,
+      )..layout(maxWidth: maxW);
+      return tp.size.height <= maxH + 0.5;
+    }
+
+    for (int i = 0; i < 25; i++) {
+      final mid = (lo + hi) / 2;
+      if (fits(mid)) { lo = mid; } else { hi = mid; }
+    }
+    return lo;
   }
 
   @override

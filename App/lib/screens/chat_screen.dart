@@ -52,8 +52,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool get _isTypingOverlayVisible {
     final kb = MediaQuery.of(context).viewInsets.bottom;
     return _editingTextBox != null &&
-        _editingTextBox!.type == "textbox" &&
-        kb > 0;
+        _editingTextBox!.type == "textbox";
   }
 
   @override
@@ -227,14 +226,14 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _updateBox(BoxItem box) async {
-    await messages.doc(box.id).update({
+    await messages.doc(box.id).set({
       ...box.toJson(
         getConversationId(),
         widget.currentUserId,
         widget.otherUserId,
       ),
       "updatedAt": FieldValue.serverTimestamp(),
-    });
+    }, SetOptions(merge: true));
   }
 
   bool _isOverTrash(Offset position) {
@@ -277,6 +276,12 @@ class _ChatScreenState extends State<ChatScreen> {
     final w = b.width.clamp(24.0, maxW).toDouble();
     final h = b.height.clamp(24.0, maxH).toDouble();
     final effR = _effectiveRadiusFor(b);
+
+    final contentW = w - 24;  // 12+12 padding
+    final contentH = h - 12;  // 6+6 padding
+    final fittedFs = b.autoFontSize
+        ? _fitFontSizeMultiline(b, _overlayCtrl!.text, contentW, contentH)
+        : b.fixedFontSize;
 
     // ilk frame’de odağı overlay editöre ver
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -324,7 +329,7 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         style: TextStyle(
           // multiline için auto mantığını basitleştiriyoruz:
-          fontSize: b.autoFontSize ? b.fixedFontSize : b.fixedFontSize,
+          fontSize: fittedFs,
           fontFamily: b.fontFamily,
           fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
           fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
@@ -336,8 +341,41 @@ class _ChatScreenState extends State<ChatScreen> {
           setState(() {});
         },
         onEditingComplete: _saveAndCloseEditor,
+        scrollPhysics: const NeverScrollableScrollPhysics(),
       ),
     );
+  }
+
+  double _fitFontSizeMultiline(BoxItem b, String text, double maxW, double maxH,
+    {double minFs = 6, double maxFs = 200}) {
+    double lo = minFs, hi = maxFs;
+    TextStyle styleFor(double fs) => TextStyle(
+          fontSize: fs,
+          fontFamily: b.fontFamily,
+          fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
+          fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
+          decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+        );
+
+    bool fits(double fs) {
+      final tp = TextPainter(
+        text: TextSpan(text: text.isEmpty ? ' ' : text, style: styleFor(fs)),
+        textDirection: TextDirection.ltr,
+        textAlign: b.align,
+        maxLines: null,
+      )..layout(maxWidth: maxW);
+      return tp.size.height <= maxH + 0.5;
+    }
+
+    for (int i = 0; i < 25; i++) {
+      final mid = (lo + hi) / 2;
+      if (fits(mid)) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
   }
 
   Widget _buildFixedTextToolbar(BoxItem b) {
@@ -575,7 +613,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
             // === Sabit Editör + Toolbar (yalnızca textbox edit + klavye açık) ===
             if (_isTypingOverlayVisible) ...[
-              // NOT: Karartma YOK (istenmedi)
+              Positioned.fill(
+                child: GestureDetector(
+                  // karanlık alana dokununca kaydet & çık
+                  onTap: _saveAndCloseEditor,
+                  child: Container(color: Colors.black.withOpacity(0.8)),
+                ),
+              ),
               Positioned(
                 left: 0,
                 right: 0,
