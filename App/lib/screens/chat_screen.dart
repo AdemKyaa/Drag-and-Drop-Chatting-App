@@ -33,6 +33,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   final List<BoxItem> _boxes = [];
   final GlobalKey _trashKey = GlobalKey();
+  final GlobalKey _fontBtnKey = GlobalKey();
   bool _draggingOverTrash = false;
   BoxItem? _editingBox;
 
@@ -114,16 +115,20 @@ class _ChatScreenState extends State<ChatScreen> {
     return r.contains(gp);
   }
 
+  int _uiEpoch = 0; // RTB'leri force-rebuild etmek için
+
   void _saveAndCloseEditor() {
     final b = _editingTextBox;
-    final c = _overlayCtrl;
-    if (b == null || c == null) return;
-    b.text = c.text;
-    _updateBox(b);
-    FocusScope.of(context).unfocus();
+    if (b == null) return;
     setState(() {
-      _editingTextBox = null;
+      _selectedId = b.id;
+      b.isSelected = true;        // kutu seçili kalsın
+      _editingTextBox = null;     // yazma modu kapansın
+      // Fit cache’lerini yok etmek için RTB key’ini farklılaştıracağız
+      _uiEpoch++;
     });
+    _updateBox(b);
+    FocusScope.of(context).unfocus(); // metin seçimi/odak kapansın
   }
 
   // ===== CRUD =====
@@ -151,7 +156,7 @@ class _ChatScreenState extends State<ChatScreen> {
         widget.otherUserId,
       ),
       "createdAt": FieldValue.serverTimestamp(),
-    });
+    }, SetOptions(merge: true));
   }
 
   Future<Uint8List> _compressToFirestoreLimit(Uint8List data) async {
@@ -213,7 +218,7 @@ class _ChatScreenState extends State<ChatScreen> {
         widget.otherUserId,
       ),
       "createdAt": FieldValue.serverTimestamp(),
-    });
+    }, SetOptions(merge: true));
   }
 
   Future<void> _removeBox(BoxItem box) async {
@@ -378,6 +383,52 @@ class _ChatScreenState extends State<ChatScreen> {
     return lo;
   }
 
+  Future<void> _showTopColorPalette(BoxItem b) async {
+    final topPad = MediaQuery.of(context).padding.top;
+    // AppBar + status bar altı:
+    final inset = EdgeInsets.only(top: topPad + kToolbarHeight + 8, left: 12, right: 12);
+
+    await showGeneralDialog(
+      context: context,
+      barrierColor: Colors.transparent, // yazma modu kapanmasın
+      barrierDismissible: true,
+      pageBuilder: (_, __, ___) {
+        final colors = [0xFF000000,0xFF2962FF,0xFFD81B60,0xFF2E7D32,0xFFF9A825,0xFFFFFFFF];
+        return Align(
+          alignment: Alignment.topCenter,
+          child: Padding(
+            padding: inset,
+            child: Material(
+              elevation: 6,
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                child: Wrap(
+                  spacing: 8, runSpacing: 8,
+                  children: colors.map((c) => GestureDetector(
+                    onTap: () {
+                      setState(() => b.textColor = c);
+                      _updateBox(b);
+                      Navigator.pop(context);
+                    },
+                    child: Container(
+                      width: 32, height: 32,
+                      decoration: BoxDecoration(
+                        color: Color(c),
+                        border: Border.all(color: Colors.black12),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  )).toList(),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildFixedTextToolbar(BoxItem b) {
     return Material(
       key: _overlayToolbarKey,
@@ -396,43 +447,7 @@ class _ChatScreenState extends State<ChatScreen> {
               children: [
                 IconButton(
                   icon: const Icon(Icons.color_lens, size: 20),
-                  onPressed: () {
-                    final colors = [
-                      0xFF000000, 0xFF2962FF, 0xFFD81B60,
-                      0xFF2E7D32, 0xFFF9A825, 0xFFFFFFFF
-                    ];
-                    showModalBottomSheet(
-                      context: context,
-                      barrierColor: Colors.transparent, // kararma yok
-                      builder: (_) => SafeArea(
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: colors
-                                .map((c) => GestureDetector(
-                                      onTap: () {
-                                        setState(() => b.textColor = c);
-                                        _updateBox(b);
-                                        Navigator.pop(context);
-                                      },
-                                      child: Container(
-                                        width: 32,
-                                        height: 32,
-                                        decoration: BoxDecoration(
-                                          color: Color(c),
-                                          border: Border.all(color: Colors.black12),
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                      ),
-                                    ))
-                                .toList(),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
+                  onPressed: () => _showTopColorPalette(_editingTextBox!),
                 ),
                 IconButton(
                   icon: Icon(Icons.format_bold, size: 20, color: b.bold ? Colors.teal : null),
@@ -501,20 +516,42 @@ class _ChatScreenState extends State<ChatScreen> {
                   },
                 ),
                 const VerticalDivider(width: 12),
-                DropdownButton<String>(
-                  value: b.fontFamily,
-                  underline: const SizedBox(),
-                  items: const [
-                    DropdownMenuItem(value: "Roboto", child: Text("Roboto")),
-                    DropdownMenuItem(value: "Arial", child: Text("Arial")),
-                    DropdownMenuItem(value: "Times New Roman", child: Text("Times New Roman")),
-                    DropdownMenuItem(value: "Courier New", child: Text("Courier New")),
-                  ],
-                  onChanged: (v) {
-                    if (v == null) return;
-                    setState(() => b.fontFamily = v);
-                    _updateBox(b);
+                // Toolbar içi (font kontrolü):
+                InkWell(
+                  key: _fontBtnKey,
+                  onTap: () async {
+                    final rb = _fontBtnKey.currentContext!.findRenderObject() as RenderBox;
+                    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+                    final btn = rb.localToGlobal(Offset.zero, ancestor: overlay);
+                    // menü yüksekliği ~220px varsayalım, butonun biraz üstüne koy
+                    final pos = RelativeRect.fromLTRB(
+                      btn.dx,            // left
+                      btn.dy - 220,      // top (yukarı)
+                      overlay.size.width - (btn.dx + rb.size.width),
+                      overlay.size.height - btn.dy,
+                    );
+
+                    final pick = await showMenu<String>(
+                      context: context,
+                      position: pos,
+                      items: const [
+                        PopupMenuItem(value: "Roboto", child: Text("Roboto")),
+                        PopupMenuItem(value: "Arial", child: Text("Arial")),
+                        PopupMenuItem(value: "Times New Roman", child: Text("Times New Roman")),
+                        PopupMenuItem(value: "Courier New", child: Text("Courier New")),
+                      ],
+                      // yazma modu bozulmasın
+                      // (barrier yok, odak kapanmıyor; overlay yine açık kalıyor)
+                    );
+                    if (pick != null) {
+                      setState(() => _editingTextBox!.fontFamily = pick);
+                      _updateBox(_editingTextBox!);
+                    }
                   },
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: Icon(Icons.font_download, size: 20),
+                  ),
                 ),
                 const SizedBox(width: 8),
                 TextButton(
@@ -568,6 +605,7 @@ class _ChatScreenState extends State<ChatScreen> {
           }
         },
         onTap: () {
+          if (_editingTextBox != null) return;
           if (_isTypingOverlayVisible) return; // overlay varsa onTapDown zaten çalıştı
           // boşluğa basınca seçimleri bırak
           FocusScope.of(context).unfocus();
@@ -584,7 +622,7 @@ class _ChatScreenState extends State<ChatScreen> {
             // Canvas
             ...boxesSorted.map((box) {
               return ResizableTextBox(
-                key: ValueKey(box.id),
+                key: ValueKey('${box.id}#$_uiEpoch'),
                 box: box,
                 isEditing: _editingBox == box,
                 onUpdate: () => setState(() {}),

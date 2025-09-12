@@ -106,7 +106,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     final r = b.borderRadius;
     final asPx = (r <= 1.0) ? (r * minSide) : r;
     final maxR = minSide / 2;
-    return asPx.clamp(0, maxR);
+    return (asPx.clamp(0.0, maxR)).toDouble();
   }
 
   // ==== tek satır font fit (canvas görünümü için) ====
@@ -169,7 +169,8 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
       text: TextSpan(
         text: b.text.isEmpty ? 'Metin...' : b.text,
         style: TextStyle(
-          fontSize: (b.autoFontSize ? _fitFontSize(b) : b.fixedFontSize).clamp(6, 2000),
+          fontSize: (b.autoFontSize ? _fitFontSize(b) : b.fixedFontSize)
+            .clamp(6.0, 2000.0) as double,
           fontFamily: b.fontFamily,
           fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
           fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
@@ -268,13 +269,11 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     final isText = b.type == "textbox";
     final editHere = widget.isEditing && isText && !widget.useExternalEditor;
 
-    final fitted = b.autoFontSize ? _fitFontSize(b) : b.fixedFontSize;
+    final fitted = b.autoFontSize ? _fitFontSizeMultiline(b) : b.fixedFontSize;
 
     final contentW = b.width  - _padH * 2;
     final contentH = b.height - _padV * 2;
-    final displayFs = b.autoFontSize
-        ? _fitFontSizeMultiline(b, b.text, contentW, contentH)
-        : b.fixedFontSize;
+    final displayFs = b.autoFontSize ? _fitFontSizeMultiline(b) : b.fixedFontSize;
 
     return Align(
       alignment: Alignment(
@@ -838,31 +837,47 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     ).whenComplete(() => widget.onInteract?.call(false));
   }
 
-  double _fitFontSizeMultiline(BoxItem b, String text, double maxW, double maxH,
-    {double minFs = 6, double maxFs = 200}) {
-    double lo = minFs, hi = maxFs;
-    TextStyle styleFor(double fs) => TextStyle(
-          fontSize: fs,
-          fontFamily: b.fontFamily,
-          fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
-          fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
-          decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
-        );
+  double _fitFontSizeMultiline(BoxItem b) {
+    // cache key
+    final key = [
+      b.text,
+      b.width.toStringAsFixed(2),
+      b.height.toStringAsFixed(2),
+      b.fontFamily, b.bold, b.italic, b.underline, b.align, b.vAlign,
+      'multiline'
+    ].join('|');
+
+    if (_fitKey == key && _fitSize != null) return _fitSize!;
+
+    final maxW = (b.width  - _padH * 2).clamp(1.0, double.infinity) as double;
+    final maxH = (b.width  - _padH * 2).clamp(1.0, double.infinity) as double;
+
+    double lo = 1.0, hi = 300.0;
+    final spanStyle = (double fs) => TextStyle(
+      fontSize: fs,
+      fontFamily: b.fontFamily,
+      fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
+      fontStyle:  b.italic ? FontStyle.italic : FontStyle.normal,
+      decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+    );
 
     bool fits(double fs) {
       final tp = TextPainter(
-        text: TextSpan(text: text.isEmpty ? ' ' : text, style: styleFor(fs)),
+        text: TextSpan(text: b.text.isEmpty ? ' ' : b.text, style: spanStyle(fs)),
         textDirection: TextDirection.ltr,
         textAlign: b.align,
-        maxLines: null,
+        maxLines: null, // çok satır
       )..layout(maxWidth: maxW);
-      return tp.size.height <= maxH + 0.5;
+      return tp.size.width  <= maxW + 0.5 && tp.size.height <= maxH + 0.5;
     }
 
-    for (int i = 0; i < 25; i++) {
+    for (int i=0; i<25; i++) {
       final mid = (lo + hi) / 2;
-      if (fits(mid)) { lo = mid; } else { hi = mid; }
+      if (fits(mid)) lo = mid; else hi = mid;
     }
+
+    _fitKey = key;
+    _fitSize = lo;
     return lo;
   }
 
@@ -879,8 +894,8 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     // klavye üstü konum (floatOnEdit true ise)
     const floatLeft = 16.0;
     final availableH = screen.height - kb;
-    final double topForBox =
-        (availableH - b.height - 8).clamp(8.0, availableH - b.height - 8.0).toDouble();
+    final upper = availableH - b.height - 8.0;
+    final topForBox = upper < 8.0 ? 8.0 : upper;
 
     final showToolbar = widget.inlineToolbar && widget.isEditing && b.type == "textbox";
     final posLeft = floatingEdit && widget.floatOnEdit ? floatLeft : b.position.dx;
@@ -964,7 +979,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                       height: b.height,
                       child: Stack(
                         clipBehavior: Clip.none,
-                        children: _buildResizeHandles(b),
+                        children: b.type == "image" ?_buildResizeHandles(b) :ths,
                       ),
                     ),
                   ),
@@ -975,4 +990,5 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
       ),
     );
   }
+  List<Widget> ths = [];
 }
