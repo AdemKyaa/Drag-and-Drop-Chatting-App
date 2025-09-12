@@ -102,21 +102,30 @@ class BoxItem {
       "bold": bold,
       "italic": italic,
       "underline": underline,
-      "align": align.toString(), // "TextAlign.center" vb.
+      "align": _alignKey(align),
       "bullet": bullet,
       "vAlign": vAlign,
 
       // stil
-      "borderRadius": borderRadius,
+      "borderRadius": borderRadius < 0 ? 0 : borderRadius,
       "backgroundColor": backgroundColor,      // int ARGB
-      "backgroundOpacity": backgroundOpacity,  // 0..1
+      "backgroundOpacity": backgroundOpacity.clamp(0.0, 1.0),
       "textColor": textColor,                  // int ARGB
-      "imageOpacity": imageOpacity,            // 0..1
+      "imageOpacity": imageOpacity.clamp(0.0, 1.0),
 
       // font modu
       "autoFontSize": autoFontSize,
       "fixedFontSize": fixedFontSize,
     };
+  }
+
+  static String _alignKey(TextAlign a) {
+    switch (a) {
+      case TextAlign.left:   return 'left';
+      case TextAlign.right:  return 'right';
+      case TextAlign.center: return 'center';
+      default:               return 'center';
+    }
   }
 
   /// Farklı formatlardan güvenli bytes üretir.
@@ -135,14 +144,18 @@ class BoxItem {
   }
 
   factory BoxItem.fromJson(Map<String, dynamic> json) {
+    final bgOpacity = ((json["backgroundOpacity"] as num?)?.toDouble() ?? 1.0).clamp(0.0, 1.0);
+    final imgOpacity = ((json["imageOpacity"] as num?)?.toDouble() ?? 1.0).clamp(0.0, 1.0);
+    final radius = ((json["borderRadius"] as num?)?.toDouble() ?? 12.0).clamp(0.0, 9999.0);
+
     return BoxItem(
       id: json["id"]?.toString() ?? "",
       position: Offset(
         (json["x"] ?? 0).toDouble(),
         (json["y"] ?? 0).toDouble(),
       ),
-      width: (json["width"] as num?)?.toDouble() ?? 200.0,
-      height: (json["height"] as num?)?.toDouble() ?? 100.0,
+      width: ((json["width"] as num?)?.toDouble() ?? 200.0).clamp(1.0, double.infinity),
+      height: ((json["height"] as num?)?.toDouble() ?? 100.0).clamp(1.0, double.infinity),
       rotation: (json["rotation"] as num?)?.toDouble() ?? 0.0,
       z: (json["z"] is num)
           ? (json["z"] as num).toInt()
@@ -164,20 +177,20 @@ class BoxItem {
       autoFontSize: (json["autoFontSize"] as bool?) ?? true,
       fixedFontSize: (json["fixedFontSize"] as num?)?.toDouble() ?? 18.0,
 
-      borderRadius: (json["borderRadius"] as num?)?.toDouble() ?? 12.0,
+      borderRadius: radius,
       backgroundColor: (json["backgroundColor"] as int?) ?? 0xFFFFFFFF,
-      backgroundOpacity: (json["backgroundOpacity"] as num?)?.toDouble() ?? 1.0,
+      backgroundOpacity: bgOpacity,
       textColor: (json["textColor"] as int?) ?? 0xFF000000,
-      imageOpacity: (json["imageOpacity"] as num?)?.toDouble() ?? 1.0,
+      imageOpacity: imgOpacity,
     );
   }
 
   static TextAlign _parseTextAlign(dynamic value) {
-    if (value == null) return TextAlign.center;
-    final s = value.toString().toLowerCase();
-    if (s.contains('left')) return TextAlign.left;
-    if (s.contains('right')) return TextAlign.right;
-    if (s.contains('center')) return TextAlign.center;
-    return TextAlign.center;
+    switch (value?.toString().toLowerCase()) {
+      case 'left':   return TextAlign.left;
+      case 'right':  return TextAlign.right;
+      case 'center': return TextAlign.center;
+      default:       return TextAlign.center;
+    }
   }
 }

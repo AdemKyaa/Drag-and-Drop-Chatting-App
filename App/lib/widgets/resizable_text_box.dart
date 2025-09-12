@@ -12,6 +12,9 @@ class ResizableTextBox extends StatefulWidget {
   final bool Function(Offset) isOverTrash;
   final void Function(bool)? onDraggingOverTrash;
   final void Function(bool active)? onInteract;
+  final void Function(bool hasFocus, BoxItem box)? onTextFocusChange;
+  final bool inlineToolbar;   // varsayılan: false (toolbar'ı burada ÇİZME)
+  final bool floatOnEdit;     // varsayılan: false (editte kutuyu klavyeye taşıma)
 
   const ResizableTextBox({
     super.key,
@@ -24,6 +27,9 @@ class ResizableTextBox extends StatefulWidget {
     required this.isOverTrash,
     this.onDraggingOverTrash,
     this.onInteract,
+    this.onTextFocusChange,
+    this.inlineToolbar = false,
+    this.floatOnEdit   = false,
   });
 
   @override
@@ -60,9 +66,11 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     _focusNode.addListener(() {
       if (_focusNode.hasFocus) {
         widget.onInteract?.call(true);
+        widget.onTextFocusChange?.call(true, widget.box);   // ✅
       } else {
         widget.onSave();
         widget.onInteract?.call(false);
+        widget.onTextFocusChange?.call(false, widget.box);  // ✅
       }
     });
   }
@@ -91,7 +99,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     final r = b.borderRadius;
     final asPx = (r <= 1.0) ? (r * minSide) : r;
     final maxR = minSide / 2;
-    return asPx.clamp(0, maxR);
+    return asPx.clamp(0, maxR).toDouble();
   }
 
   // ==== font fit (tek satır) ====
@@ -136,7 +144,11 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
 
     for (int i = 0; i < 25; i++) {
       final mid = (lo + hi) / 2;
-      if (fits(mid)) lo = mid; else hi = mid;
+      if (fits(mid)) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
     }
 
     _fitKey = key;
@@ -150,7 +162,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
       text: TextSpan(
         text: b.text.isEmpty ? 'Metin...' : b.text,
         style: TextStyle(
-          fontSize: (b.autoFontSize ? _fitFontSize(b) : b.fixedFontSize).clamp(6, 2000),
+          fontSize: (b.autoFontSize ? _fitFontSize(b) : b.fixedFontSize).clamp(6, 2000).toDouble(),
           fontFamily: b.fontFamily,
           fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
           fontStyle:  b.italic ? FontStyle.italic : FontStyle.normal,
@@ -181,7 +193,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
 
     // klavye açık + textbox edit iken kutuyu sabit tut (panelle çakışmasın)
     final kb = MediaQuery.of(context).viewInsets.bottom;
-    final floatingEdit = widget.isEditing && kb > 0 && b.type == "textbox";
+    final floatingEdit = widget.isEditing && kb > 0 && b.type == "textbox" && widget.floatOnEdit;
 
     if (!floatingEdit) {
       if (d.pointerCount == 1) {
@@ -191,8 +203,8 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
       }
       if (d.pointerCount >= 2) {
         if (d.scale > 0) {
-          b.width  = (_startW * d.scale).clamp(24.0, 4096.0);
-          b.height = (_startH * d.scale).clamp(24.0, 4096.0);
+          b.width  = (_startW * d.scale).clamp(24.0, 4096.0).toDouble();
+          b.height = (_startH * d.scale).clamp(24.0, 4096.0).toDouble();
           _fitKey = null;
         }
         b.rotation = _startRot + d.rotation;
@@ -200,7 +212,12 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     }
 
     _lastGlobalPoint = d.focalPoint;
-    final over = widget.isOverTrash(_lastGlobalPoint!);
+
+    bool over = false;
+    final p = _lastGlobalPoint;          // 👈 local ref
+    if (p != null) {
+      over = widget.isOverTrash(p);      // 👈 güvenli kontrol
+    }
     _overTrashFrames = over ? (_overTrashFrames + 1) : 0;
     widget.onDraggingOverTrash?.call(over);
 
@@ -230,7 +247,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
       }
       return SizedBox.expand(
         child: Opacity(
-          opacity: b.imageOpacity.clamp(0, 1),
+          opacity: b.imageOpacity.clamp(0.0, 1.0).toDouble(),
           child: Image.memory(
             b.imageBytes!,
             fit: BoxFit.cover,           // alanı tamamen kapla
@@ -280,8 +297,8 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                 final maxHWhileEditing = (screen.height - kb) * 0.35;
 
                 if (kb > 0) {
-                  b.width = s.width.clamp(24.0, maxWWhileEditing);
-                  b.height = s.height.clamp(24.0, maxHWhileEditing);
+                  b.width = s.width.clamp(24.0, maxWWhileEditing).toDouble();
+                  b.height = s.height.clamp(24.0, maxHWhileEditing).toDouble();
                 } else {
                   if (s.width > b.width)  b.width = s.width;
                   if (s.height > b.height) b.height = s.height;
@@ -346,39 +363,39 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
 
     // köşeler
     add(-s / 2 + a, -s / 2 + a, (dx, dy) { // sol-üst
-      box.width = (box.width - dx).clamp(24.0, 4096.0);
-      box.height = (box.height - dy).clamp(24.0, 4096.0);
+      box.width = (box.width - dx).clamp(24.0, 4096.0).toDouble();
+      box.height = (box.height - dy).clamp(24.0, 4096.0).toDouble();
       box.position += Offset(dx, dy);
     });
     add(box.width - s / 2 - a, -s / 2 + a, (dx, dy) { // sağ-üst
-      box.width = (box.width + dx).clamp(24.0, 4096.0);
-      box.height = (box.height - dy).clamp(24.0, 4096.0);
+      box.width = (box.width + dx).clamp(24.0, 4096.0).toDouble();
+      box.height = (box.height - dy).clamp(24.0, 4096.0).toDouble();
       box.position += Offset(0, dy);
     });
     add(-s / 2 + a, box.height - s / 2 - a, (dx, dy) { // sol-alt
-      box.width = (box.width - dx).clamp(24.0, 4096.0);
-      box.height = (box.height + dy).clamp(24.0, 4096.0);
+      box.width = (box.width - dx).clamp(24.0, 4096.0).toDouble();
+      box.height = (box.height + dy).clamp(24.0, 4096.0).toDouble();
       box.position += Offset(dx, 0);
     });
     add(box.width - s / 2 - a, box.height - s / 2 - a, (dx, dy) { // sağ-alt
-      box.width = (box.width + dx).clamp(24.0, 4096.0);
-      box.height = (box.height + dy).clamp(24.0, 4096.0);
+      box.width = (box.width + dx).clamp(24.0, 4096.0).toDouble();
+      box.height = (box.height + dy).clamp(24.0, 4096.0).toDouble();
     });
 
     // kenarlar
     add(box.width / 2 - s / 2, -s / 2 + a, (dx, dy) { // üst
-      box.height = (box.height - dy).clamp(24.0, 4096.0);
+      box.height = (box.height - dy).clamp(24.0, 4096.0).toDouble();
       box.position += Offset(0, dy);
     });
     add(box.width / 2 - s / 2, box.height - s / 2 - a, (dx, dy) { // alt
-      box.height = (box.height + dy).clamp(24.0, 4096.0);
+      box.height = (box.height + dy).clamp(24.0, 4096.0).toDouble();
     });
     add(-s / 2 + a, box.height / 2 - s / 2, (dx, dy) { // sol
-      box.width = (box.width - dx).clamp(24.0, 4096.0);
+      box.width = (box.width - dx).clamp(24.0, 4096.0).toDouble();
       box.position += Offset(dx, 0);
     });
     add(box.width - s / 2 - a, box.height / 2 - s / 2, (dx, dy) { // sağ
-      box.width = (box.width + dx).clamp(24.0, 4096.0);
+      box.width = (box.width + dx).clamp(24.0, 4096.0).toDouble();
     });
 
     return hs;
@@ -770,16 +787,19 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     final floatingEdit = widget.isEditing && b.type == "textbox" && kb > 0;
 
     // klavye üstü konum (floating edit)
-    final floatLeft = 16.0;
+    const floatLeft = 16.0;
     final availableH = screen.height - kb;
-    final topForBox = (availableH - b.height - 8).clamp(8.0, availableH - b.height - 8.0);
+    final double topForBox =
+      (availableH - b.height - 8).clamp(8.0, availableH - b.height - 8.0).toDouble();
 
     // toolbar gösterilecek mi?
-    final showToolbar = widget.isEditing && b.type == "textbox";
+    final showToolbar = widget.inlineToolbar && widget.isEditing && b.type == "textbox";
     // dış Positioned için top/left
     final posLeft = floatingEdit ? floatLeft : b.position.dx;
     // toolbar'ı üstte göstereceğimiz için dış kapsayıcıyı biraz yukarı çekiyoruz ki toolbar da hit alabilsin
-    final posTop = (floatingEdit ? topForBox : b.position.dy) - (showToolbar ? (_toolbarH + 6) : 0);
+    final posTop = (floatingEdit ? topForBox : b.position.dy) - (showToolbar ? (_toolbarH + 6) : 0.0);
+    
+    final double effR = _effectiveRadius(b);
 
     return Positioned(
       left: posLeft,
@@ -829,19 +849,17 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                   left: 0,
                   top: (showToolbar ? (_toolbarH + 6) : 0),
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(_effectiveRadius(b)),
+                    borderRadius: BorderRadius.circular(effR),
                     child: Container(
                       width: b.width,
                       height: b.height,
-                      padding: b.type == "image"
-                          ? EdgeInsets.zero
-                          : const EdgeInsets.symmetric(horizontal: _padH, vertical: _padV),
-                      // image ise arka planı tamamen kaldır
+                      // ✅ image ise arka planı şeffaf bırakıyoruz
                       color: b.type == "image"
                           ? Colors.transparent
                           : Color(b.backgroundColor)
                               .withAlpha((b.backgroundOpacity * 255).clamp(0, 255).round()),
                       alignment: Alignment.center,
+                      padding: b.type == "textbox" ? const EdgeInsets.symmetric(horizontal: 12, vertical: 6) : EdgeInsets.zero, // ✅ textbox padding
                       child: _buildContent(b),
                     ),
                   ),

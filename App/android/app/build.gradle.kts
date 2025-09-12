@@ -13,7 +13,7 @@ dependencies {
 android {
     namespace = "com.example.chat_app"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = "26.1.10909125"
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -33,6 +33,22 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        ndk {
+            // varsa eski filtreleri temizle
+            abiFilters.clear()
+            // üç ABI’yı açık tut
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
+    }
+
+    splits {
+        abi {
+            isEnable = false
+            // Eğer ileride release'de split açacaksan:
+            // reset()
+            // include("arm64-v8a","armeabi-v7a","x86_64")
+            // isUniversalApk = true
+        }
     }
 
     buildTypes {

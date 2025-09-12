@@ -35,6 +35,8 @@ class _ChatScreenState extends State<ChatScreen> {
   final GlobalKey _trashKey = GlobalKey();
   bool _draggingOverTrash = false;
   BoxItem? _editingBox;
+  BoxItem? _editingTextBox;
+  final ScrollController _toolbarScroll = ScrollController();
 
   String getConversationId() {
     final ids = [widget.currentUserId, widget.otherUserId]..sort();
@@ -98,7 +100,9 @@ class _ChatScreenState extends State<ChatScreen> {
     );
 
     setState(() {
-      for (var b in _boxes) b.isSelected = false;
+      for (var b in _boxes) {
+        b.isSelected = false;
+      }
       newBox.isSelected = true;
       _boxes.add(newBox);
       _editingBox = null;
@@ -161,7 +165,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
     // Hemen ekranda göster
     setState(() {
-      for (var b in _boxes) b.isSelected = false;
+      for (var b in _boxes) {
+        b.isSelected = false;
+      }
       newBox.isSelected = true;
       _boxes.add(newBox);
       _editingBox = null;
@@ -209,7 +215,7 @@ class _ChatScreenState extends State<ChatScreen> {
           widget.currentUserId,
           widget.otherUserId,
         ),
-        "createdAt": FieldValue.serverTimestamp(),
+        "updatedAt": FieldValue.serverTimestamp(),
       });
     }
   }
@@ -226,7 +232,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _selectBox(BoxItem box, {bool edit = false}) {
     setState(() {
-      for (var b in _boxes) b.isSelected = false;
+      for (var b in _boxes) {
+        b.isSelected = false;
+      }
       box.isSelected = true;
       _selectedId = box.id;
       _editingBox = edit ? box : null;
@@ -237,10 +245,220 @@ class _ChatScreenState extends State<ChatScreen> {
     _updateBox(box);
   }
 
+  double _effectiveRadiusFor(BoxItem b) {
+    final minSide = b.width < b.height ? b.width : b.height;
+    final r = b.borderRadius;
+    final asPx = (r <= 1.0) ? (r * minSide) : r;
+    final maxR = minSide / 2;
+    return asPx.clamp(0, maxR).toDouble();
+  }
+
+  Widget _buildTypingPreview(BoxItem b) {
+    final screen = MediaQuery.of(context).size;
+    final kb     = MediaQuery.of(context).viewInsets.bottom;
+    final maxW   = screen.width - 32;        // sağ-sol 16px marj
+    final maxH   = (screen.height - kb) * .35;
+
+    final w = b.width.clamp(24.0, maxW).toDouble();
+    final h = b.height.clamp(24.0, maxH).toDouble();
+    final effR = _effectiveRadiusFor(b);
+
+    // Metin auto ise ölçek küçültmek için FittedBox kullanıyoruz (tek satır)
+    final child = (b.type == "textbox")
+        ? Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                b.text.isEmpty ? "Metin..." : b.text,
+                maxLines: 1,
+                softWrap: false,
+                style: TextStyle(
+                  fontSize: b.autoFontSize ? 200 : b.fixedFontSize, // FittedBox küçültür
+                  fontFamily: b.fontFamily,
+                  fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
+                  fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
+                  decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+                  color: Color(b.textColor),
+                ),
+              ),
+            ),
+          )
+        : (b.imageBytes == null || b.imageBytes!.isEmpty)
+          ? const SizedBox.expand()
+          : SizedBox.expand(
+              child: Image.memory(
+                b.imageBytes!,
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+              ),
+            );
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(effR),
+      child: Container(
+        width: w,
+        height: h,
+        padding: b.type == "textbox" ? const EdgeInsets.symmetric(horizontal: 12, vertical: 6) : EdgeInsets.zero,
+        color: b.type == "image"
+            ? Colors.transparent
+            : Color(b.backgroundColor)
+                .withAlpha((b.backgroundOpacity * 255).clamp(0, 255).toInt()),
+        child: child,
+      ),
+    );
+  }
+
+  // ChatScreen.dart, _ChatScreenState içine EKLE (örn. _buildTypingPreview'dan sonra)
+  Widget _buildFixedTextToolbar(BoxItem b) {
+    return Material(
+      elevation: 6,
+      color: Colors.white,
+      child: SizedBox(
+        height: 48,
+        child: SingleChildScrollView(
+          controller: _toolbarScroll,
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque, // tıklama boşluğa düşmesin
+            onTap: () {},                     // gesture arena'yı sahiplen
+            child: Row(
+              children: [
+                // Metin rengi
+                IconButton(
+                  icon: const Icon(Icons.color_lens, size: 20),
+                  onPressed: () {
+                    final colors = [
+                      0xFF000000, 0xFF2962FF, 0xFFD81B60,
+                      0xFF2E7D32, 0xFFF9A825, 0xFFFFFFFF
+                    ];
+                    showModalBottomSheet(
+                      context: context,
+                      builder: (_) => SafeArea(
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Wrap(
+                            spacing: 8, runSpacing: 8,
+                            children: colors.map((c) => GestureDetector(
+                              onTap: () {
+                                setState(() => b.textColor = c);
+                                _updateBox(b);
+                                Navigator.pop(context);
+                              },
+                              child: Container(
+                                width: 32, height: 32,
+                                decoration: BoxDecoration(
+                                  color: Color(c),
+                                  border: Border.all(color: Colors.black12),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                            )).toList(),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+
+                // Bold/Italic/Underline
+                IconButton(
+                  icon: Icon(Icons.format_bold, size: 20, color: b.bold ? Colors.teal : null),
+                  onPressed: () { setState(() => b.bold = !b.bold); _updateBox(b); },
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_italic, size: 20, color: b.italic ? Colors.teal : null),
+                  onPressed: () { setState(() => b.italic = !b.italic); _updateBox(b); },
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_underline, size: 20, color: b.underline ? Colors.teal : null),
+                  onPressed: () { setState(() => b.underline = !b.underline); _updateBox(b); },
+                ),
+
+                const VerticalDivider(width: 12),
+
+                // Yatay hizalar
+                IconButton(
+                  icon: const Icon(Icons.format_align_left, size: 20),
+                  onPressed: () { setState(() => b.align = TextAlign.left); _updateBox(b); },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.format_align_center, size: 20),
+                  onPressed: () { setState(() => b.align = TextAlign.center); _updateBox(b); },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.format_align_right, size: 20),
+                  onPressed: () { setState(() => b.align = TextAlign.right); _updateBox(b); },
+                ),
+
+                const VerticalDivider(width: 12),
+
+                // Dikey hizalar
+                IconButton(
+                  icon: const Icon(Icons.vertical_align_top, size: 20),
+                  onPressed: () { setState(() => b.vAlign = 'top'); _updateBox(b); },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.vertical_align_center, size: 20),
+                  onPressed: () { setState(() => b.vAlign = 'middle'); _updateBox(b); },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.vertical_align_bottom, size: 20),
+                  onPressed: () { setState(() => b.vAlign = 'bottom'); _updateBox(b); },
+                ),
+
+                const VerticalDivider(width: 12),
+
+                // Font ailesi
+                DropdownButton<String>(
+                  value: b.fontFamily,
+                  underline: const SizedBox(),
+                  items: const [
+                    DropdownMenuItem(value: "Roboto", child: Text("Roboto")),
+                    DropdownMenuItem(value: "Arial", child: Text("Arial")),
+                    DropdownMenuItem(value: "Times New Roman", child: Text("Times New Roman")),
+                    DropdownMenuItem(value: "Courier New", child: Text("Courier New")),
+                  ],
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setState(() => b.fontFamily = v);
+                    _updateBox(b);
+                  },
+                ),
+
+                const SizedBox(width: 8),
+
+                // Auto / Fixed font size
+                TextButton(
+                  onPressed: () {
+                    setState(() => b.autoFontSize = !b.autoFontSize);
+                    _updateBox(b);
+                  },
+                  child: Text(b.autoFontSize ? "Auto" : "Fixed"),
+                ),
+                if (!b.autoFontSize)
+                  SizedBox(
+                    width: 140,
+                    child: Slider(
+                      value: b.fixedFontSize,
+                      min: 6, max: 200,
+                      onChanged: (v) { setState(() => b.fixedFontSize = v); },
+                      onChangeEnd: (_) => _updateBox(b),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // Z'ye göre yerel sıralama (En üste/alta anında çalışsın)
     final boxesSorted = [..._boxes]..sort((a, b) => a.z.compareTo(b.z));
+    final kb = MediaQuery.of(context).viewInsets.bottom;
 
     return Scaffold(
       appBar: AppBar(
@@ -251,12 +469,15 @@ class _ChatScreenState extends State<ChatScreen> {
         ],
       ),
       body: GestureDetector(
-        behavior: HitTestBehavior.deferToChild, // ⬅️ ESKİ: translucent
+        behavior: HitTestBehavior.translucent,
         onTap: () {
+          if (_editingTextBox != null) return;
           // boşluğa basınca seçimleri bırak
           FocusScope.of(context).unfocus();
           setState(() {
-            for (var b in _boxes) b.isSelected = false;
+            for (var b in boxesSorted) {
+              b.isSelected = false;
+            }
             _editingBox = null;
             _selectedId = null;
           });
@@ -264,7 +485,7 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Stack(
           children: [
             // ⬇️ z’ye göre sıralı çizim, diğer kullanıcıya eklenenler zaten snapshots ile gelir
-            ...([..._boxes]..sort((a,b)=>a.z.compareTo(b.z))).map((box) {
+            ...boxesSorted.map((box) { 
               return ResizableTextBox(
                 key: ValueKey(box.id),
                 box: box,
@@ -278,22 +499,68 @@ class _ChatScreenState extends State<ChatScreen> {
                   setState(() => _draggingOverTrash = isOver);
                 },
                 onInteract: (active) => setState(() => _isInteracting = active),
+                onTextFocusChange: (hasFocus, bx) {                   // ✅ YENİ
+                  setState(() {
+                    _editingBox = hasFocus ? bx : null;
+                    _editingTextBox = hasFocus ? bx : null;
+                  });
+                },
+                inlineToolbar: false,   // 👈 RTB kendi toolbar’ını çizmesin
+                floatOnEdit: false,     // 👈 RTB editte kendini klavyeye taşımayacak
               );
             }),
-            if (_boxes.any((b) => b.isSelected))
-              Align(
-                alignment: Alignment.bottomCenter,
-                child: Container(
-                  key: _trashKey,
-                  height: 100,
-                  color: _draggingOverTrash
-                    ? Colors.red.withAlpha((0.5 * 255).round())
-                    : Colors.red.withAlpha((0.2 * 255).round()),
-                  child: const Center(
-                    child: Icon(Icons.delete, size: 40, color: Colors.red),
+
+            if (boxesSorted.any((b) => b.isSelected))
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: Container(
+                key: _trashKey,
+                height: 100,
+                color: _draggingOverTrash
+                  ? Colors.red.withAlpha((0.5 * 255).round())
+                  : Colors.red.withAlpha((0.2 * 255).round()),
+                child: const Center(
+                  child: Icon(Icons.delete, size: 40, color: Colors.red),
+                ),
+              ),
+            ),
+            
+            // ===== Sabit Önizleme + Toolbar (yalnızca textbox edit + klavye açık) =====
+            // ===== Sabit Önizleme + Toolbar (yalnızca textbox edit + klavye açık) =====
+            if (_editingTextBox != null &&
+                _editingTextBox!.type == "textbox" &&
+                MediaQuery.of(context).viewInsets.bottom > 0) ...[
+              // 1) Karartma (overlay)
+              Positioned.fill(
+                child: ModalBarrier(
+                  color: Colors.black.withOpacity(0.35),
+                  dismissible: false,
+                ),
+              ),
+
+              // 2) Klavye üstü Önizleme + Toolbar
+              Positioned(
+                left: 0, right: 0, bottom: 0,
+                child: SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      bottom: MediaQuery.of(context).viewInsets.bottom - 256, // klavye üstü
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Center(child: _buildTypingPreview(_editingTextBox!)),
+                        ),
+                        _buildFixedTextToolbar(_editingTextBox!),
+                      ],
+                    ),
                   ),
                 ),
               ),
+            ],
           ],
         ),
       ),
