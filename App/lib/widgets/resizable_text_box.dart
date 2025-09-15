@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/box_item.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 
 class ResizableTextBox extends StatefulWidget {
   final BoxItem box;
@@ -18,6 +19,7 @@ class ResizableTextBox extends StatefulWidget {
   final bool inlineToolbar;   // burada toolbar çizilsin mi
   final bool floatOnEdit;     // editte kutuyu klavyeye taşı
   final bool useExternalEditor; // dış overlay editör kullanılıyor mu
+  final VoidCallback? onDeselect;
 
   const ResizableTextBox({
     super.key,
@@ -34,6 +36,7 @@ class ResizableTextBox extends StatefulWidget {
     this.inlineToolbar = false,
     this.floatOnEdit = false,
     this.useExternalEditor = false,
+    this.onDeselect,
   });
 
   @override
@@ -43,7 +46,7 @@ class ResizableTextBox extends StatefulWidget {
 class _ResizableTextBoxState extends State<ResizableTextBox> {
   // padding (text kutuları için)
   static const double _padH = 12;
-  static const double _padV = 6;
+  static const double _padV = 8;
 
   // toolbar yüksekliği
   static const double _toolbarH = 48;
@@ -68,7 +71,6 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     _controller = TextEditingController(text: widget.box.text);
 
     _focusNode.addListener(() {
-      if (widget.useExternalEditor) return; // dış editör varken RTB odakla ilgilenme
       if (_focusNode.hasFocus) {
         widget.onInteract?.call(true);
         widget.onTextFocusChange?.call(true, widget.box);
@@ -163,6 +165,25 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     return lo;
   }
 
+  double _measureSingleLineWidth(BoxItem b, TextStyle style) {
+    final tp = TextPainter(
+      text: TextSpan(text: b.text.isEmpty ? ' ' : b.text, style: style),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout(); // sınırsız
+    // son harf kırpılmasın diye +1
+    return tp.width.ceilToDouble() + 1.0;
+  }
+
+  Size _layoutMultiline(BoxItem b, TextStyle style, double maxContentW) {
+    final tp = TextPainter(
+      text: TextSpan(text: b.text.isEmpty ? ' ' : b.text, style: style),
+      textDirection: TextDirection.ltr,
+      maxLines: null, // çok satır
+    )..layout(maxWidth: maxContentW);
+    return tp.size;
+  }
+
   // ==== ölçüm (tek satır) ====
   Size _measureSingleLine(BoxItem b) {
     final tp = TextPainter(
@@ -170,7 +191,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
         text: b.text.isEmpty ? 'Metin...' : b.text,
         style: TextStyle(
           fontSize: (b.autoFontSize ? _fitFontSize(b) : b.fixedFontSize)
-            .clamp(6.0, 2000.0) as double,
+            .clamp(6.0, 2000.0),
           fontFamily: b.fontFamily,
           fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
           fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
@@ -240,12 +261,15 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
 
     widget.onDraggingOverTrash?.call(false);
     widget.onInteract?.call(false);
+    widget.box.isSelected = false;
+    widget.onUpdate();
 
     if (shouldDelete) {
       widget.onDelete();
       return;
     }
     widget.onSave();
+    widget.onDeselect?.call();
   }
 
   // ==== content ====
@@ -267,13 +291,23 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     }
 
     final isText = b.type == "textbox";
-    final editHere = widget.isEditing && isText && !widget.useExternalEditor;
+    final editHere = widget.isEditing && isText;
 
-    final fitted = b.autoFontSize ? _fitFontSizeMultiline(b) : b.fixedFontSize;
+    final fitted = b.autoFontSize ?_fitFontSizeMultiline(
+          b,
+          (widget.isEditing ? _controller.text : b.text),
+          (b.width  - _padH * 2).clamp(1.0, double.infinity).toDouble(),
+          (b.height - _padV * 2).clamp(1.0, double.infinity).toDouble(),
+        ) : b.fixedFontSize;
 
     final contentW = b.width  - _padH * 2;
     final contentH = b.height - _padV * 2;
-    final displayFs = b.autoFontSize ? _fitFontSizeMultiline(b) : b.fixedFontSize;
+    final displayFs = b.autoFontSize ? _fitFontSizeMultiline(
+          b,
+          (widget.isEditing ? _controller.text : b.text),
+          (b.width  - _padH * 2).clamp(1.0, double.infinity).toDouble(),
+          (b.height - _padV * 2).clamp(1.0, double.infinity).toDouble(),
+        ) : b.fixedFontSize;
 
     return Align(
       alignment: Alignment(
@@ -307,41 +341,74 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
               onChanged: (val) {
                 b.text = val;
 
-                // tek satır ölçümü bazlı genişleme (overlay çok satır editörü kullanırken devre dışı)
-                final s = _measureSingleLine(b);
+                // Bu edit sırasında, fontu sabit alıyoruz (auto fit değil),
+                // kutunun ölçüsünü genişlik/ yükseklik ile ayarlıyoruz.
                 final media = MediaQuery.of(context);
-                final kb = media.viewInsets.bottom;
                 final screen = media.size;
-                final maxWWhileEditing = screen.width - 32;
-                final maxHWhileEditing = (screen.height - kb) * 0.35;
 
-                if (kb > 0) {
-                  b.width = s.width.clamp(24.0, maxWWhileEditing).toDouble();
-                  b.height = s.height.clamp(24.0, maxHWhileEditing).toDouble();
+                // yazarken tek satır sığdığı sürece genişlet,
+                // sığmazsa genişliği max yap, çok satır yüksekliği arttır
+                const padW = _padH * 2;
+                const padH = _padV * 2;
+
+                // Yazarken kutu ekran içinde kalsın (kenarlarda 16px pay)
+                final double maxBoxW = (screen.width - 32).clamp(24.0, 4096.0);
+
+                final baseStyle = TextStyle(
+                  fontSize: b.fixedFontSize,          // EDIT sırasında sabit font
+                  fontFamily: b.fontFamily,
+                  fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
+                  fontStyle:  b.italic ? FontStyle.italic : FontStyle.normal,
+                  decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+                );
+
+                final singleLineW = _measureSingleLineWidth(b, baseStyle);
+                if (singleLineW + padW <= maxBoxW) {
+                  // Tek satır sığıyor → genişliği tek satıra göre ayarla, yükseklik 1 satır
+                  // son harf taşmasın diye +1 ekliyoruz (zaten _measureSingleLineWidth’te var)
+                  b.width  = (singleLineW + padW).clamp(24.0, 4096.0).toDouble();
+
+                  // 1 satır yüksekliği
+                  final oneLine = TextPainter(
+                    text: TextSpan(text: 'M', style: baseStyle),
+                    textDirection: TextDirection.ltr,
+                    maxLines: 1,
+                  )..layout();
+                  b.height = (oneLine.height + padH).clamp(24.0, 4096.0).toDouble();
                 } else {
-                  if (s.width > b.width) b.width = s.width;
-                  if (s.height > b.height) b.height = s.height;
+                  // Sığmıyor → genişliği sabitle (max), çok satır yerleşimine göre yükseklik artır
+                  final contentW = (maxBoxW - padW).clamp(1.0, maxBoxW);
+                  final multi = _layoutMultiline(b, baseStyle, contentW);
+                  b.width  = maxBoxW;
+                  b.height = (multi.height + padH).clamp(24.0, 4096.0).toDouble();
                 }
 
-                _fitKey = null;
+                _fitKey = null; // display-fit hesabı güncellensin
                 widget.onUpdate();
               },
               onSubmitted: (_) => widget.onSave(),
             )
           : Text(
-              b.text.isEmpty ? "Metin..." : b.text,
-              maxLines: null, // çok satır gösterim
-              softWrap: true,
-              overflow: TextOverflow.visible,
-              style: TextStyle(
-                fontSize: displayFs,
-                fontFamily: b.fontFamily,
-                fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
-                fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
-                decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
-                color: Color(b.textColor),
-              ),
+            b.text.isEmpty ? "Metin..." : b.text,
+            maxLines: null,
+            softWrap: true,
+            overflow: TextOverflow.visible,
+            style: TextStyle(
+              fontSize: b.autoFontSize
+                  ? _fitFontSizeMultiline(
+                      b,
+                      b.text,
+                      (b.width  - _padH * 2).clamp(1.0, b.width).toDouble(),
+                      (b.height - _padV * 2).clamp(1.0, b.height).toDouble(),
+                    )
+                  : b.fixedFontSize,
+              fontFamily: b.fontFamily,
+              fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
+              fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
+              decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+              color: Color(b.textColor),
             ),
+          ),
     );
   }
 
@@ -531,31 +598,6 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                   icon: const Icon(Icons.format_align_right, size: 20),
                   onPressed: () {
                     b.align = TextAlign.right;
-                    widget.onUpdate();
-                    widget.onSave();
-                  },
-                ),
-                const VerticalDivider(),
-                IconButton(
-                  icon: const Icon(Icons.vertical_align_top, size: 20),
-                  onPressed: () {
-                    b.vAlign = 'top';
-                    widget.onUpdate();
-                    widget.onSave();
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.vertical_align_center, size: 20),
-                  onPressed: () {
-                    b.vAlign = 'middle';
-                    widget.onUpdate();
-                    widget.onSave();
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.vertical_align_bottom, size: 20),
-                  onPressed: () {
-                    b.vAlign = 'bottom';
                     widget.onUpdate();
                     widget.onSave();
                   },
@@ -798,6 +840,51 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                       ),
                     ],
                   ),
+                  // --- Metin Rengi (renk çarkı ile) ---
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Text("Metin Rengi"),
+                      const SizedBox(width: 12),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.color_lens),
+                        label: const Text("Renk Seç"),
+                        onPressed: () async {
+                          Color temp = Color(b.textColor);
+                          await showDialog(
+                            context: context,
+                            builder: (_) => AlertDialog(
+                              title: const Text("Metin Rengi"),
+                              content: SingleChildScrollView(
+                                child: ColorPicker(
+                                  pickerColor: temp,
+                                  onColorChanged: (c) => temp = c,
+                                  paletteType: PaletteType.hsvWithHue, // renk çarkı
+                                  enableAlpha: false,
+                                  displayThumbColor: true,
+                                ),
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  child: const Text("İptal"),
+                                ),
+                                TextButton(
+                                  onPressed: () {
+                                    b.textColor = temp.value;
+                                    widget.onUpdate();
+                                    widget.onSave();
+                                    Navigator.pop(context);
+                                  },
+                                  child: const Text("Seç"),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
@@ -837,23 +924,31 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     ).whenComplete(() => widget.onInteract?.call(false));
   }
 
-  double _fitFontSizeMultiline(BoxItem b) {
-    // cache key
+  double _fitFontSizeMultiline(
+    BoxItem b,
+    String text,
+    double maxW,
+    double maxH,
+  ) {
+    // clamp -> double
+    final cw = maxW.clamp(1.0, double.infinity).toDouble();
+    final ch = maxH.clamp(1.0, double.infinity).toDouble();
+
+    // cache key (metin + sınırlar + stil)
     final key = [
-      b.text,
-      b.width.toStringAsFixed(2),
-      b.height.toStringAsFixed(2),
-      b.fontFamily, b.bold, b.italic, b.underline, b.align, b.vAlign,
-      'multiline'
+      text,
+      cw.toStringAsFixed(2),
+      ch.toStringAsFixed(2),
+      b.fontFamily, b.bold, b.italic, b.underline, b.align,
+      'multiline-v2'
     ].join('|');
 
     if (_fitKey == key && _fitSize != null) return _fitSize!;
 
-    final maxW = (b.width  - _padH * 2).clamp(1.0, double.infinity) as double;
-    final maxH = (b.width  - _padH * 2).clamp(1.0, double.infinity) as double;
+    // Arama aralığı
+    double lo = 4.0, hi = 400.0;
 
-    double lo = 1.0, hi = 300.0;
-    final spanStyle = (double fs) => TextStyle(
+    TextStyle styleFor(double fs) => TextStyle(
       fontSize: fs,
       fontFamily: b.fontFamily,
       fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
@@ -863,17 +958,23 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
 
     bool fits(double fs) {
       final tp = TextPainter(
-        text: TextSpan(text: b.text.isEmpty ? ' ' : b.text, style: spanStyle(fs)),
+        text: TextSpan(text: text.isEmpty ? ' ' : text, style: styleFor(fs)),
         textDirection: TextDirection.ltr,
         textAlign: b.align,
         maxLines: null, // çok satır
-      )..layout(maxWidth: maxW);
-      return tp.size.width  <= maxW + 0.5 && tp.size.height <= maxH + 0.5;
+      )..layout(maxWidth: cw);
+      // hem genişlik hem yükseklik sınırlarının içinde mi?
+      return tp.size.width <= cw + 0.5 && tp.size.height <= ch + 0.5;
     }
 
-    for (int i=0; i<25; i++) {
+    // ikili arama
+    for (int i = 0; i < 25; i++) {
       final mid = (lo + hi) / 2;
-      if (fits(mid)) lo = mid; else hi = mid;
+      if (fits(mid)) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
     }
 
     _fitKey = key;
@@ -920,13 +1021,13 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
           }
         },
         onTap: () {
+          final b = widget.box;
           if (b.type == "textbox") {
-            widget.onSelect(true);
-            if (!widget.useExternalEditor) {
-              Future.delayed(Duration.zero, () {
-                if (!_focusNode.hasFocus) _focusNode.requestFocus();
-              });
-            }
+            widget.onSelect(true); // edit modunu aç
+            // her durumda odak iste
+            Future.microtask(() {
+              if (!_focusNode.hasFocus) _focusNode.requestFocus();
+            });
           } else {
             widget.onSelect(false);
           }
@@ -979,7 +1080,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                       height: b.height,
                       child: Stack(
                         clipBehavior: Clip.none,
-                        children: b.type == "image" ?_buildResizeHandles(b) :ths,
+                        children: b.type == "image" ? _buildResizeHandles(b) : [],
                       ),
                     ),
                   ),
@@ -990,5 +1091,4 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
       ),
     );
   }
-  List<Widget> ths = [];
 }

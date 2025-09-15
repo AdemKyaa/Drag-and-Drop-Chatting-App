@@ -6,6 +6,7 @@ import 'package:image/image.dart' as img;
 import 'dart:async';
 import '../models/box_item.dart';
 import '../widgets/resizable_text_box.dart';
+import 'dart:math' as math;
 
 class ChatScreen extends StatefulWidget {
   final String currentUserId;
@@ -120,15 +121,52 @@ class _ChatScreenState extends State<ChatScreen> {
   void _saveAndCloseEditor() {
     final b = _editingTextBox;
     if (b == null) return;
+
+    // --- 8px padding ile font-fit + genişlik ayarı ---
+    final screen = MediaQuery.of(context).size;
+    const padH = 8.0, padV = 8.0;
+    final contentMaxW = screen.width - 32 - padH * 2; // sağ/sol margin 16 + iç pad
+    final contentH    = (b.height - padV * 2).clamp(1, double.infinity);
+
+    // 1) Yüksekliği aşmayacak en büyük fontu bul
+    final fittedFs = _fitFontSizeMultiline(
+      b,
+      b.text,
+      math.max(24.0, (b.width - padH * 2)),
+      (b.height - padV * 2).clamp(1.0, double.infinity).toDouble(),
+    );
+
+    // 2) Bu font boyutuyla gerçek satır genişliğini ölç, kutu genişliğini buna göre ayarla
+    final tp = TextPainter(
+      text: TextSpan(
+        text: b.text.isEmpty ? ' ' : b.text,
+        style: TextStyle(
+          fontSize: fittedFs,
+          fontFamily: b.fontFamily,
+          fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
+          fontStyle:  b.italic ? FontStyle.italic : FontStyle.normal,
+          decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      textAlign: b.align,
+      maxLines: null,
+    )..layout(maxWidth: contentMaxW);
+
+    final needContentW = _maxLineWidth(tp).clamp(1, contentMaxW);
+    b.width = (needContentW + padH * 2).clamp(24.0, screen.width - 32);
+    // yüksekliği kullanıcı belirliyor; font zaten sığacak şekilde ayarlı
+
+    // 3) Overlay kapat + görselde seçim KALKSIN
     setState(() {
-      _selectedId = b.id;
-      b.isSelected = true;        // kutu seçili kalsın
-      _editingTextBox = null;     // yazma modu kapansın
-      // Fit cache’lerini yok etmek için RTB key’ini farklılaştıracağız
-      _uiEpoch++;
+      b.isSelected     = false;  // 👈 seçim kalksın
+      _selectedId      = null;
+      _editingTextBox  = null;
+      _uiEpoch++;                // RTB'leri cache kırmak için
     });
+
     _updateBox(b);
-    FocusScope.of(context).unfocus(); // metin seçimi/odak kapansın
+    FocusScope.of(context).unfocus();
   }
 
   // ===== CRUD =====
@@ -141,7 +179,9 @@ class _ChatScreenState extends State<ChatScreen> {
     );
 
     setState(() {
-      for (var b in _boxes) b.isSelected = false;
+      for (var b in _boxes) {
+        b.isSelected = false;
+      }
       newBox.isSelected = true;
       _boxes.add(newBox);
       _editingBox = null;
@@ -192,33 +232,59 @@ class _ChatScreenState extends State<ChatScreen> {
     Uint8List bytes = await picked.readAsBytes();
     bytes = await _compressToFirestoreLimit(bytes);
 
+    // ✨ doğal boyutları bul
+    final decoded = img.decodeImage(bytes);
+    double w = 240, h = 180;
+    if (decoded != null) {
+      w = decoded.width.toDouble();
+      h = decoded.height.toDouble();
+
+      // Ekrandan taşarsa ekrana orantılı sığdır (maks %80)
+      final screen = MediaQuery.of(context).size;
+      final maxW = screen.width * 0.8;
+      final maxH = screen.height * 0.5;
+
+      final scale = [
+        w > 0 ? (maxW / w) : 1.0,
+        h > 0 ? (maxH / h) : 1.0,
+        1.0
+      ].reduce((a, b) => a < b ? a : b);
+
+      if (scale < 1.0) {
+        w = (w * scale);
+        h = (h * scale);
+      }
+    }
+
     final now = DateTime.now().millisecondsSinceEpoch;
     final newBox = BoxItem(
       id: now.toString(),
       position: const Offset(100, 100),
-      width: 240,
-      height: 180,
+      width: w,              // ✨ doğal (gerekirse küçültülmüş) genişlik
+      height: h,             // ✨ doğal (gerekirse küçültülmüş) yükseklik
       type: "image",
       imageBytes: bytes,
       z: now,
     );
 
     setState(() {
-      for (var b in _boxes) b.isSelected = false;
+      for (var b in _boxes) {
+        b.isSelected = false;
+      }
       newBox.isSelected = true;
       _boxes.add(newBox);
       _editingBox = null;
       _selectedId = newBox.id;
     });
 
-    await messages.doc(newBox.id).set({
+    await messages.add({
       ...newBox.toJson(
         getConversationId(),
         widget.currentUserId,
         widget.otherUserId,
       ),
       "createdAt": FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    });
   }
 
   Future<void> _removeBox(BoxItem box) async {
@@ -247,15 +313,26 @@ class _ChatScreenState extends State<ChatScreen> {
     final trashPos = renderBox.localToGlobal(Offset.zero);
     final trashSize = renderBox.size;
     final rect = Rect.fromLTWH(trashPos.dx, trashPos.dy, trashSize.width, trashSize.height)
-        .inflate(32);
+      .inflate(32.0); // <- double
     return rect.contains(position);
   }
 
   void _selectBox(BoxItem box, {bool edit = false}) {
     setState(() {
-      for (var b in _boxes) b.isSelected = false;
-      box.isSelected = true;
-      _selectedId = box.id;
+      // önce tüm seçimleri bırak
+      for (var b in _boxes) {
+        b.isSelected = false;
+      }
+
+      // yalnızca DRAG sırasında seçili yap (edit true iken seçme!)
+      if (!edit) {
+        box.isSelected = true;
+        _selectedId = box.id;
+      } else {
+        box.isSelected = false;
+        _selectedId = null;
+      }
+
       _editingBox = edit ? box : null;
       box.z = DateTime.now().millisecondsSinceEpoch; // üste al
     });
@@ -283,7 +360,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final effR = _effectiveRadiusFor(b);
 
     final contentW = w - 24;  // 12+12 padding
-    final contentH = h - 12;  // 6+6 padding
+    final contentH = h - 16;  // 8+8 padding
     final fittedFs = b.autoFontSize
         ? _fitFontSizeMultiline(b, _overlayCtrl!.text, contentW, contentH)
         : b.fixedFontSize;
@@ -302,7 +379,7 @@ class _ChatScreenState extends State<ChatScreen> {
       key: _overlayEditorKey,
       width: w,
       height: h,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // 12/8
       decoration: BoxDecoration(
         color: Colors.white, // önizleme/editor: her zaman beyaz ve tam opak
         borderRadius: BorderRadius.circular(effR),
@@ -381,6 +458,16 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     }
     return lo;
+  }
+
+  double _maxLineWidth(TextPainter tp) {
+    final lines = tp.computeLineMetrics();
+    if (lines.isEmpty) return tp.size.width;
+    double w = 0;
+    for (final m in lines) {
+      w = math.max(w, m.width);
+    }
+    return w;
   }
 
   Future<void> _showTopColorPalette(BoxItem b) async {
@@ -638,14 +725,50 @@ class _ChatScreenState extends State<ChatScreen> {
                     setState(() => _editingTextBox = box);
                   }
                 },
+                onDeselect: () {
+                  setState(() {
+                    box.isSelected = false;
+                    if(_selectedId == box.id) _selectedId = null;
+                  });
+                  _updateBox(box);
+                },
                 onDelete: () => _removeBox(box),
                 isOverTrash: _isOverTrash,
                 onDraggingOverTrash: (isOver) => setState(() => _draggingOverTrash = isOver),
-                onInteract: (active) => setState(() => _isInteracting = active),
-                onTextFocusChange: null,
+                onInteract: (active) {
+                  setState(() => _isInteracting = active);
+
+                  // ✨ drag bitti, edit modu da yoksa -> seçimi kaldır
+                  if (!active && _editingTextBox == null) {
+                    setState(() {
+                      _selectedId = null;
+                      for (final b in _boxes) {
+                        b.isSelected = false;
+                      }
+                    });
+                  }
+                },
+                onTextFocusChange: (hasFocus, bx) {
+                  setState(() {
+                    _editingBox = hasFocus ? bx : null;
+                    _editingTextBox = hasFocus ? bx : null;
+
+                    // ✨ Yazma modundan çıkınca kutu seçimi kalksın
+                    if (!hasFocus) {
+                      _selectedId = null;
+                      for (final b in _boxes) {
+                        b.isSelected = false;
+                      }
+                    }
+                  });
+
+                  if (!hasFocus) {
+                    _updateBox(bx); // son değişiklikleri kaydet
+                  }
+                },
                 inlineToolbar: false,
                 floatOnEdit: false,
-                useExternalEditor: _isTypingOverlayVisible && _editingTextBox?.id == box.id,
+                useExternalEditor: false,
               );
             }),
 
@@ -666,7 +789,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   top: false,
                   child: Padding(
                     // paneli klavyenin üstüne getir
-                    padding: EdgeInsets.only(bottom: 0),
+                    padding: const EdgeInsets.only(bottom: 0),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
