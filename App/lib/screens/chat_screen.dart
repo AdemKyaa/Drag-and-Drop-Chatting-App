@@ -39,13 +39,15 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _draggingOverTrash = false;
   BoxItem? _editingBox;
 
-  // === Overlay editör (klavye üstünde) ===
+  // Overlay editör
   BoxItem? _editingTextBox;
   final ScrollController _toolbarScroll = ScrollController();
   final GlobalKey _overlayEditorKey = GlobalKey();
   final GlobalKey _overlayToolbarKey = GlobalKey();
   final FocusNode _overlayFocus = FocusNode();
   TextEditingController? _overlayCtrl;
+
+  int _uiEpoch = 0; // RTB'leri cache-bust etmek için
 
   String getConversationId() {
     final ids = [widget.currentUserId, widget.otherUserId]..sort();
@@ -54,8 +56,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   bool get _isTypingOverlayVisible {
     final kb = MediaQuery.of(context).viewInsets.bottom;
-    return _editingTextBox != null &&
-        _editingTextBox!.type == "textbox";
+    return _editingTextBox != null && _editingTextBox!.type == "textbox";
   }
 
   @override
@@ -85,7 +86,6 @@ class _ChatScreenState extends State<ChatScreen> {
       }
 
       merged.sort((a, b) => a.z.compareTo(b.z));
-
       for (final b in merged) {
         b.isSelected = (b.id == _selectedId);
       }
@@ -107,7 +107,7 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
-  // ===== Helpers for overlay tap detection =====
+  // ==== helpers ====
   bool _hit(GlobalKey key, Offset gp) {
     final rb = key.currentContext?.findRenderObject() as RenderBox?;
     if (rb == null) return false;
@@ -116,74 +116,12 @@ class _ChatScreenState extends State<ChatScreen> {
     return r.contains(gp);
   }
 
-  int _uiEpoch = 0; // RTB'leri force-rebuild etmek için
-
-  void _saveAndCloseEditor() {
-    final b = _editingTextBox;
-    if (b == null) return;
-
-    // --- 8px padding ile font-fit + genişlik ayarı ---
-    final screen = MediaQuery.of(context).size;
-    final kb = MediaQuery.of(context).viewInsets.bottom; // <-- eklendi
-    const padH = 8.0, padV = 8.0;
-    final contentMaxW = screen.width - 32 - padH * 2;
-
-    // 1) Yüksekliği aşmayacak en büyük fontu bul
-    final fittedFs = _fitFontSizeMultiline(
-      b,
-      b.text,
-      math.max(24.0, (b.width - padH * 2)),
-      (b.height - padV * 2).clamp(1.0, double.infinity).toDouble(),
-    );
-
-    // Auto veya Fixed moda göre font size seç
-    double finalFs;
-    if (b.autoFontSize) {
-      // Auto modda min 24
-      finalFs = b.fixedFontSize < 24 ? 24 : b.fixedFontSize;
-    } else {
-      // Fixed modda 24–48 arası
-      finalFs = b.fixedFontSize.clamp(24.0, 48.0);
-    }
-
-    final tp = TextPainter(
-      text: TextSpan(
-        text: b.text.isEmpty ? ' ' : b.text,
-        style: TextStyle(
-          fontSize: finalFs,
-          fontFamily: b.fontFamily,
-          fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
-          fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
-          decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-      textAlign: b.align,
-      maxLines: null,
-    )..layout(maxWidth: contentMaxW);
-
-    b.width  = (tp.size.width + padH * 2).clamp(24.0, screen.width - 32);
-    b.height = (tp.size.height + padV * 2);
-    b.fixedFontSize = finalFs;
-
-    // genişlik = en uzun satır
-    final needContentW = _maxLineWidth(tp);
-    // yükseklik = toplam satır yüksekliği
-    final needContentH = tp.size.height;
-
-    b.width  = (needContentW + padH * 2 + 32).toDouble();
-    b.height = (needContentH + padV * 2 + 32).toDouble();
-
-    // 3) Overlay kapat + görselde seçim KALKSIN
-    setState(() {
-      b.isSelected     = true;
-      _selectedId      = b.id;
-      _editingTextBox  = null;
-      _uiEpoch++;                // RTB'leri cache kırmak için
-    });
-
-    _updateBox(b);
-    FocusScope.of(context).unfocus();
+  double _effectiveRadiusFor(BoxItem b) {
+    final minSide = b.width < b.height ? b.width : b.height;
+    final r = b.borderRadius;
+    final asPx = (r <= 1.0) ? (r * minSide) : r;
+    final maxR = minSide / 2;
+    return asPx.clamp(0, maxR).toDouble();
   }
 
   // ===== CRUD =====
@@ -194,18 +132,21 @@ class _ChatScreenState extends State<ChatScreen> {
       position: const Offset(150, 150),
       type: "textbox",
       text: "",
-      fontSize: 12,
-      width: 80,
-      height: 40,
+      fontSize: 24, // başlangıç için 24
+      width: 120,
+      height: 48,
       z: now,
+      // metin varsayılanları:
+      align: TextAlign.center,
+      vAlign: 'center',
+      autoFontSize: true,       // auto mod açık
+      fixedFontSize: 24.0,      // auto açıkken değer saklı ama min 24 kuralına uyacağız
     );
 
     setState(() {
-      for (var b in _boxes) {
-        b.isSelected = false;
-      }
-      _overlayCtrl?.dispose();   // 👈 eski text controller’ı temizle
-      _overlayCtrl = null;       // 👈 sıfırla
+      for (var b in _boxes) b.isSelected = false;
+      _overlayCtrl?.dispose();
+      _overlayCtrl = null;
       newBox.isSelected = true;
       _boxes.add(newBox);
       _editingBox = null;
@@ -213,7 +154,6 @@ class _ChatScreenState extends State<ChatScreen> {
       _editingTextBox = newBox;
     });
 
-    // doc id = box.id (eşzamanlılık için tekil)
     await messages.doc(newBox.id).set({
       ...newBox.toJson(
         getConversationId(),
@@ -257,27 +197,19 @@ class _ChatScreenState extends State<ChatScreen> {
     Uint8List bytes = await picked.readAsBytes();
     bytes = await _compressToFirestoreLimit(bytes);
 
-    // ✨ doğal boyutları bul
+    // doğal boyutları bul ve ekrana sığdır
     final decoded = img.decodeImage(bytes);
     double w = 240, h = 180;
     if (decoded != null) {
       w = decoded.width.toDouble();
       h = decoded.height.toDouble();
-
-      // Ekrandan taşarsa ekrana orantılı sığdır (maks %80)
       final screen = MediaQuery.of(context).size;
       final maxW = screen.width * 0.8;
       final maxH = screen.height * 0.5;
-
-      final scale = [
-        w > 0 ? (maxW / w) : 1.0,
-        h > 0 ? (maxH / h) : 1.0,
-        1.0
-      ].reduce((a, b) => a < b ? a : b);
-
+      final scale = [maxW / w, maxH / h, 1.0].reduce((a, b) => a < b ? a : b);
       if (scale < 1.0) {
-        w = (w * scale);
-        h = (h * scale);
+        w *= scale;
+        h *= scale;
       }
     }
 
@@ -293,9 +225,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
 
     setState(() {
-      for (var b in _boxes) {
-        b.isSelected = false;
-      }
+      for (var b in _boxes) b.isSelected = false;
       newBox.isSelected = true;
       _boxes.add(newBox);
       _editingBox = null;
@@ -338,68 +268,228 @@ class _ChatScreenState extends State<ChatScreen> {
     final trashPos = renderBox.localToGlobal(Offset.zero);
     final trashSize = renderBox.size;
     final rect = Rect.fromLTWH(trashPos.dx, trashPos.dy, trashSize.width, trashSize.height)
-      .inflate(32.0); // <- double
+        .inflate(32.0);
     return rect.contains(position);
   }
 
   void _selectBox(BoxItem box, {bool edit = false}) {
     setState(() {
-      // önce tüm seçimleri bırak
       for (var b in _boxes) {
         b.isSelected = false;
       }
-
       _editingBox = edit ? box : null;
-      box.z = DateTime.now().millisecondsSinceEpoch; // üste al
+      box.z = DateTime.now().millisecondsSinceEpoch;
     });
     _updateBox(box);
   }
 
-  double _effectiveRadiusFor(BoxItem b) {
-    final minSide = b.width < b.height ? b.width : b.height;
-    final r = b.borderRadius;
-    final asPx = (r <= 1.0) ? (r * minSide) : r;
-    final maxR = minSide / 2;
-    return asPx.clamp(0, maxR).toDouble();
+  // ======================================================
+  // ==============  TEXTBOX ÖLÇÜM / FONT-FIT  ============
+  // ======================================================
+
+  // Tek satırda (veya 2 satırda) sığdırmak için fontu küçült.
+  // - writeMode = true iken: min..max = 12..24
+  // - writeMode = false & auto = true => minFs = 24, max büyüyebilir (kutuyu da büyütürüz)
+  // - writeMode = false & auto = false => min..max = 24..48
+  double _fitFontToConstraint({
+    required String text,
+    required double maxW,
+    required double maxH,
+    required TextStyle base,
+    required int maxLines,
+    required double minFs,
+    required double maxFs,
+  }) {
+    // boş metin bile olsa tek boşlukla ölçelim ki yükseklik 0 olmasın
+    final String measureText = (text.isEmpty ? ' ' : text);
+
+    bool fits(double fs) {
+      final tp = TextPainter(
+        text: TextSpan(text: measureText, style: base.copyWith(fontSize: fs)),
+        textDirection: TextDirection.ltr,
+        maxLines: maxLines,
+      )..layout(maxWidth: maxW);
+      return tp.size.width <= maxW + 0.5 &&
+             tp.size.height <= maxH + 0.5 &&
+             !tp.didExceedMaxLines;
+    }
+
+    double lo = minFs, hi = maxFs;
+    for (int i = 0; i < 22; i++) {
+      final mid = (lo + hi) / 2;
+      if (fits(mid)) {
+        lo = mid;  // sığıyor, büyüt
+      } else {
+        hi = mid;  // sığmıyor, küçült
+      }
+    }
+    return lo;
   }
 
+  // Belirtilen fs ile gerçek boyutu ölç (maxLines & softWrap=false düşüncesiyle)
+  Size _measureText({
+    required String text,
+    required double maxW,
+    required TextStyle style,
+    required int maxLines,
+  }) {
+    final tp = TextPainter(
+      text: TextSpan(text: text.isEmpty ? ' ' : text, style: style),
+      textDirection: TextDirection.ltr,
+      maxLines: maxLines,
+    )..layout(maxWidth: maxW);
+    return tp.size;
+  }
+
+  int _lineCountFromText(String t) => '\n'.allMatches(t).length + 1;
+
+  // Yazma modundan çıkarken textbox’ı kurallara göre ayarla ve kaydet
+  void _saveAndCloseEditor() {
+    final b = _editingTextBox;
+    if (b == null) return;
+
+    const padH = 12.0, padV = 8.0;
+    final screen = MediaQuery.of(context).size;
+
+    final text = b.text;
+    final hasNewline = text.contains('\n');
+    final maxLines = hasNewline ? 2 : 1;
+
+    // base style (font ailesi/bold/italic/underline vs korunuyor)
+    final base = TextStyle(
+      fontFamily: b.fontFamily,
+      fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
+      fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
+      decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+      color: Color(b.textColor),
+    );
+
+    // AUTO mu FIXED mi?
+    double minFs, maxFs;
+    if (b.autoFontSize) {
+      // Auto modda kaydederken min 24; üst sınırı kısıtlamıyoruz çünkü kutuyu büyüteceğiz.
+      minFs = 24.0;
+      maxFs = 200.0; // kutuyu büyüttüğümüz için font da büyüyebilir
+    } else {
+      // Fixed: 24..48 arası
+      minFs = 24.0;
+      maxFs = 48.0;
+    }
+
+    // Kaydederken tek satır istiyorsak ekrana sığdırma yok, kutuyu genişletiriz.
+    // Ekran genişliğini aşmaya izin var (canvas sınırsız sayılır).
+    // Ama ölçüm için bir "geçici maxW" lazım. Çok büyük verelim.
+    final double hugeW = 100000; // pratikte sınırsız genişlik
+
+    // Önce fs bul:
+    // - Auto: min 24’ten küçük olamaz; tek satırda sığdırmak için fontu büyütebiliriz,
+    //   büyürse kutu da genişleyecek (hugeW ile kısıtlamıyoruz).
+    // - Fixed: seçilen b.fixedFontSize’i 24..48 arasında clamp’leriz.
+    double fs;
+    if (b.autoFontSize) {
+      // min 24, üst sınır 200 — kutu genişleyerek sığdırır.
+      fs = minFs;
+    } else {
+      fs = b.fixedFontSize.clamp(minFs, maxFs);
+    }
+
+    // Gerçek metin boyutunu ölç (tek satır veya 2 satır)
+    final size = _measureText(
+      text: text,
+      maxW: hugeW,
+      style: base.copyWith(fontSize: fs),
+      maxLines: maxLines,
+    );
+
+    // Kutu ölçüleri: metin + padding
+    final newW = size.width + padH * 2;
+    final newH = size.height + padV * 2;
+
+    setState(() {
+      b.width = newW;
+      b.height = newH;
+      b.fixedFontSize = fs; // fixed modda slider’dan seçilmiş olabilir, auto’da min 24 zaten
+      b.isSelected = true;  // seçim açık kalsın
+      _selectedId = b.id;
+      _editingTextBox = null;
+      _uiEpoch++;
+    });
+
+    _updateBox(b);
+    FocusScope.of(context).unfocus();
+  }
+
+  // ==== OVERLAY (YAZMA MODU) ====
   Widget _buildTypingEditor() {
     final b = _editingTextBox!;
-    final screen = MediaQuery.of(context).size;
     final kb = MediaQuery.of(context).viewInsets.bottom;
+    final screen = MediaQuery.of(context).size;
 
-    final maxW = screen.width - 32;
-    final maxH = (screen.height - kb) * .35;
+    // Yazma modunda kutu ekranı aşmamalı → maxW = ekran - 32
+    final double maxW = screen.width - 32;
+    // Maks 2 satır yüksekliği (24pt * 2 + padding) kadar göstereceğiz
+    const padH = 12.0, padV = 8.0;
+    const double maxLineFs = 24.0;
+    final double oneLineH = (maxLineFs * 1.0 * 1.2); // yaklaşık line-height
+    final double maxContentH = oneLineH * 2; // en fazla 2 satır
+    final double maxH = maxContentH + padV * 2;
 
-    final w = b.width.toDouble();
-    final h = b.height.toDouble();
-    final effR = _effectiveRadiusFor(b);
-
-    final contentW = w - 24;  // 12+12 padding
-    final contentH = h - 16;  // 8+8 padding
-    final textNow = _overlayCtrl?.text ?? b.text; // ***
-    final fittedFs = b.autoFontSize
-        ? _fitFontSizeMultiline(b, textNow, contentW, contentH) // ***
-        : (b.fixedFontSize < 12 ? 12 : b.fixedFontSize);
-
-    // ilk frame’de odağı overlay editöre ver
+    // controller
+    _overlayCtrl ??= TextEditingController(text: b.text);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_overlayFocus.hasFocus) {
-        FocusScope.of(context).requestFocus(_overlayFocus);
+        _overlayFocus.requestFocus();
       }
     });
 
-    _overlayCtrl ??= TextEditingController(text: b.text);
-    // (edit başlatılırken zaten güncellemiştik, burada tekrar dokunmuyoruz)
+    final textNow = _overlayCtrl!.text;
+    final hasNewline = textNow.contains('\n');
+    final currentLines = _lineCountFromText(textNow);
+    // Return’a basılmadıkça tek satır; varsa en fazla 2 satır
+    final maxLines = hasNewline ? 2 : 1;
+
+    // Yazma modunda font aralığı 12..24
+    final minFs = 12.0;
+    final maxFs = 24.0;
+
+    final base = TextStyle(
+      fontFamily: b.fontFamily,
+      fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
+      fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
+      decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+      color: Color(b.textColor),
+    );
+
+    // fontu sığdır:
+    final fs = _fitFontToConstraint(
+      text: textNow,
+      maxW: maxW - padH * 2,
+      maxH: maxH - padV * 2,
+      base: base,
+      maxLines: maxLines,
+      minFs: minFs,
+      maxFs: maxFs,
+    );
+
+    // gerçek ölçüm:
+    final measured = _measureText(
+      text: textNow,
+      maxW: maxW - padH * 2,
+      style: base.copyWith(fontSize: fs),
+      maxLines: maxLines,
+    );
+
+    final boxW = (measured.width + padH * 2).clamp(48.0, maxW);
+    final boxH = (measured.height + padV * 2).clamp(40.0, maxH);
 
     return Container(
       key: _overlayEditorKey,
-      width: w,
-      height: h,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // 12/8
+      width: boxW,
+      height: boxH,
+      padding: const EdgeInsets.symmetric(horizontal: padH, vertical: padV),
       decoration: BoxDecoration(
-        color: Colors.white, // önizleme/editor: her zaman beyaz ve tam opak
-        borderRadius: BorderRadius.circular(effR),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(_effectiveRadiusFor(b)),
       ),
       child: TextField(
         controller: _overlayCtrl,
@@ -407,162 +497,61 @@ class _ChatScreenState extends State<ChatScreen> {
         autofocus: true,
         keyboardType: TextInputType.multiline,
         textInputAction: TextInputAction.newline,
-        maxLines: null,
+        maxLines: maxLines,        // return yoksa 1, varsa 2
         minLines: 1,
+        // wrap yok: tek satırda taşarsa font küçülttük zaten
+        // TextField wrap'ı kontrol etmiyor ama maxLines=1 iken softWrap zaten yok.
         textAlign: b.align,
-        textAlignVertical: TextAlignVertical.top,
+        textAlignVertical: TextAlignVertical.center,
         decoration: const InputDecoration(
           border: InputBorder.none,
           isCollapsed: true,
           contentPadding: EdgeInsets.zero,
         ),
-        style: TextStyle(
-          // multiline için auto mantığını basitleştiriyoruz:
-          fontSize: fittedFs.toDouble(),
-          fontFamily: b.fontFamily,
-          fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
-          fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
-          decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
-          color: Color(b.textColor),
-        ),
+        style: base.copyWith(fontSize: fs),
         onChanged: (v) {
           b.text = v;
 
-          const padH = 12.0, padV = 8.0;
-          final screen = MediaQuery.of(context).size;
-          final kb = MediaQuery.of(context).viewInsets.bottom;
-          final contentMaxW = screen.width - 32 - padH * 2;
-          // 2 satır yüksekliği (24 punto * 2 + padding)
-          final contentMaxH = (24.0 * 2 + padV * 2);
+          final hasNL = v.contains('\n');
+          final mLines = hasNL ? 2 : 1;
 
-          // Base style
-          final baseStyle = TextStyle(
-            fontFamily: b.fontFamily,
-            fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
-            fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
-            decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
-            color: Color(b.textColor),
+          final fitFs = _fitFontToConstraint(
+            text: v,
+            maxW: maxW - padH * 2,
+            maxH: maxH - padV * 2,
+            base: base,
+            maxLines: mLines,
+            minFs: minFs,
+            maxFs: maxFs,
           );
 
-          // Satır sayısı kontrolü
-          final lineCount = '\n'.allMatches(v).length + 1;
-          final maxLines = lineCount > 1 ? 2 : 1;
-
-          // Font size hesapla
-          final fs = _fitFontSizeToBox(
-            v,
-            contentMaxW,
-            contentMaxH,
-            minFs: 12,
-            maxFs: 24,
-            maxLines: maxLines,
-            baseStyle: baseStyle,
+          final s = _measureText(
+            text: v,
+            maxW: maxW - padH * 2,
+            style: base.copyWith(fontSize: fitFs),
+            maxLines: mLines,
           );
-
-          // TextPainter ile gerçek ölçüm
-          final tp = TextPainter(
-            text: TextSpan(text: v.isEmpty ? ' ' : v, style: baseStyle.copyWith(fontSize: fs)),
-            textDirection: TextDirection.ltr,
-            maxLines: maxLines,
-          )..layout(maxWidth: contentMaxW);
 
           setState(() {
-            b.width  = (tp.size.width + padH * 2).clamp(24.0, screen.width - 32);
-            b.height = (tp.size.height + padV * 2).clamp(24.0, contentMaxH);
-            b.fixedFontSize = fs; // kaydet
+            // Geçici olarak overlay kutusunu da güncelliyoruz (görselde)
+            b.width = s.width + padH * 2;
+            b.height = s.height + padV * 2;
+            b.fixedFontSize = fitFs;
           });
         },
         onEditingComplete: _saveAndCloseEditor,
-        scrollPhysics: const NeverScrollableScrollPhysics(),
       ),
     );
   }
 
-  double _fitFontSizeMultiline(BoxItem b, String text, double maxW, double maxH,
-    {double minFs = 24, double maxFs = 200}) {
-    double lo = minFs, hi = maxFs;
-    TextStyle styleFor(double fs) => TextStyle(
-          fontSize: fs.toDouble(),
-          fontFamily: b.fontFamily,
-          fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
-          fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
-          decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
-        );
-
-    bool fits(double fs) {
-      final tp = TextPainter(
-        text: TextSpan(text: text.isEmpty ? ' ' : text, style: styleFor(fs)),
-        textDirection: TextDirection.ltr,
-        textAlign: b.align,
-        maxLines: null,
-      )..layout(maxWidth: maxW);
-      return tp.size.height <= maxH + 0.5;
-    }
-
-    for (int i = 0; i < 25; i++) {
-      final mid = (lo + hi) / 2;
-      if (fits(mid)) {
-        lo = mid;
-      } else {
-        hi = mid;
-      }
-    }
-    return lo;
-  }
-
-  /// Yazıyı kutuya sığdırmak için fontu küçültür.
-  /// Overflow asla olmaz, her zaman sığar.
-  /// maxLines = 1 veya 2 olabilir (return var/yok durumuna göre).
-  double _fitFontSizeToBox(
-    String text,
-    double maxW,
-    double maxH, {
-    double minFs = 12,
-    double maxFs = 24,
-    int maxLines = 1,
-    required TextStyle baseStyle,
-  }) {
-    double lo = minFs, hi = maxFs;
-
-    bool fits(double fs) {
-      final tp = TextPainter(
-        text: TextSpan(text: text.isEmpty ? ' ' : text, style: baseStyle.copyWith(fontSize: fs)),
-        textDirection: TextDirection.ltr,
-        maxLines: maxLines,
-      )..layout(maxWidth: maxW);
-      return tp.size.width <= maxW && tp.size.height <= maxH && !tp.didExceedMaxLines;
-    }
-
-    // Binary search ile uygun fontu bul
-    for (int i = 0; i < 20; i++) {
-      final mid = (lo + hi) / 2;
-      if (fits(mid)) {
-        lo = mid; // bu boyut sığıyor, daha büyüğünü dene
-      } else {
-        hi = mid; // sığmadı, küçült
-      }
-    }
-    return lo;
-  }
-
-  double _maxLineWidth(TextPainter tp) {
-    final lines = tp.computeLineMetrics();
-    if (lines.isEmpty) return tp.size.width;
-    double w = 0;
-    for (final m in lines) {
-      w = math.max(w, m.width);
-    }
-    return w;
-  }
-
+  // ==== üstteki toolbar ====
   Future<void> _showTopColorPalette(BoxItem b) async {
     final topPad = MediaQuery.of(context).padding.top;
-    // AppBar + status bar altı:
     final inset = EdgeInsets.only(top: topPad + kToolbarHeight + 8, left: 12, right: 12);
 
     await showGeneralDialog(
       context: context,
-      barrierColor: Colors.transparent, // yazma modu kapanmasın
+      barrierColor: Colors.transparent,
       barrierDismissible: true,
       pageBuilder: (_, __, ___) {
         final colors = [0xFF000000,0xFF2962FF,0xFFD81B60,0xFF2E7D32,0xFFF9A825,0xFFFFFFFF];
@@ -614,7 +603,7 @@ class _ChatScreenState extends State<ChatScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 6),
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () {}, // boşluğa düşmesin
+            onTap: () {},
             child: Row(
               children: [
                 IconButton(
@@ -632,8 +621,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   },
                 ),
                 IconButton(
-                  icon:
-                      Icon(Icons.format_underline, size: 20, color: b.underline ? Colors.teal : null),
+                  icon: Icon(Icons.format_underline, size: 20, color: b.underline ? Colors.teal : null),
                   onPressed: () {
                     setState(() => b.underline = !b.underline);
                     _updateBox(b);
@@ -662,19 +650,17 @@ class _ChatScreenState extends State<ChatScreen> {
                   },
                 ),
                 const VerticalDivider(width: 12),
-                // Toolbar içi (font kontrolü):
                 InkWell(
                   key: _fontBtnKey,
                   onTap: () async {
                     final ctx = _fontBtnKey.currentContext;
-                    if (ctx == null) return; 
+                    if (ctx == null) return;
                     final rb = ctx.findRenderObject() as RenderBox;
                     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
                     final btn = rb.localToGlobal(Offset.zero, ancestor: overlay);
-                    // menü yüksekliği ~220px varsayalım, butonun biraz üstüne koy
                     final pos = RelativeRect.fromLTRB(
-                      btn.dx,            // left
-                      btn.dy - 220,      // top (yukarı)
+                      btn.dx,
+                      btn.dy - 220,
                       overlay.size.width - (btn.dx + rb.size.width),
                       overlay.size.height - btn.dy,
                     );
@@ -688,8 +674,6 @@ class _ChatScreenState extends State<ChatScreen> {
                         PopupMenuItem(value: "Times New Roman", child: Text("Times New Roman")),
                         PopupMenuItem(value: "Courier New", child: Text("Courier New")),
                       ],
-                      // yazma modu bozulmasın
-                      // (barrier yok, odak kapanmıyor; overlay yine açık kalıyor)
                     );
                     if (pick != null) {
                       setState(() => _editingTextBox!.fontFamily = pick);
@@ -705,17 +689,24 @@ class _ChatScreenState extends State<ChatScreen> {
                 TextButton(
                   onPressed: () {
                     setState(() => b.autoFontSize = !b.autoFontSize);
+                    // auto kapanınca fixedFontSize 24..48 aralığında dursun
+                    if (!b.autoFontSize) {
+                      b.fixedFontSize = b.fixedFontSize.clamp(24.0, 48.0);
+                    } else {
+                      // auto açılınca min 24 kuralı
+                      if (b.fixedFontSize < 24.0) b.fixedFontSize = 24.0;
+                    }
                     _updateBox(b);
                   },
                   child: Text(b.autoFontSize ? "Auto" : "Fixed"),
                 ),
                 if (!b.autoFontSize)
                   SizedBox(
-                    width: 140,
+                    width: 160,
                     child: Slider(
-                      value: b.fixedFontSize,
-                      min: 6,
-                      max: 200,
+                      value: b.fixedFontSize.clamp(24.0, 48.0),
+                      min: 24,
+                      max: 48,
                       onChanged: (v) => setState(() => b.fixedFontSize = v),
                       onChangeEnd: (_) => _updateBox(b),
                     ),
@@ -730,9 +721,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Z'ye göre yerel sıralama (En üste/alta anında çalışsın)
     final boxesSorted = [..._boxes]..sort((a, b) => a.z.compareTo(b.z));
-    final kb = MediaQuery.of(context).viewInsets.bottom;
 
     return Scaffold(
       appBar: AppBar(
@@ -744,7 +733,6 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
-        // boşluğa basınca: overlay açıksa editor/toolbar dışına tıklanırsa kaydet&çık
         onTapDown: (d) {
           if (_isTypingOverlayVisible) {
             final gp = d.globalPosition;
@@ -755,8 +743,7 @@ class _ChatScreenState extends State<ChatScreen> {
         onTap: () {
           if (_isPanelOpen) return;
           if (_editingTextBox != null) return;
-          if (_isTypingOverlayVisible) return; // overlay varsa onTapDown zaten çalıştı
-          // boşluğa basınca seçimleri bırak
+          if (_isTypingOverlayVisible) return;
           FocusScope.of(context).unfocus();
           setState(() {
             for (var b in boxesSorted) {
@@ -786,12 +773,11 @@ class _ChatScreenState extends State<ChatScreen> {
                   }
                   _selectBox(box, edit: edit);
                   if (edit && box.type == "textbox") {
-                    // *** güvenli şekilde oluştur/yeniden kullan
-                    if (_overlayCtrl == null) { // ***
-                      _overlayCtrl = TextEditingController(text: box.text); // ***
-                    } else { // ***
-                      _overlayCtrl!.text = box.text; // ***
-                    } // ***
+                    if (_overlayCtrl == null) {
+                      _overlayCtrl = TextEditingController(text: box.text);
+                    } else {
+                      _overlayCtrl!.text = box.text;
+                    }
                     _overlayCtrl!.selection = TextSelection.collapsed(
                       offset: _overlayCtrl!.text.length,
                     );
@@ -801,7 +787,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 onDeselect: () {
                   setState(() {
                     box.isSelected = false;
-                    if(_selectedId == box.id) _selectedId = null;
+                    if (_selectedId == box.id) _selectedId = null;
                   });
                   _updateBox(box);
                 },
@@ -810,23 +796,11 @@ class _ChatScreenState extends State<ChatScreen> {
                 onDraggingOverTrash: (isOver) => setState(() => _draggingOverTrash = isOver),
                 onInteract: (active) {
                   setState(() => _isInteracting = active);
-
-                  // ✨ drag bitti, edit modu da yoksa -> seçimi kaldır
-                  /*if (!active && _editingTextBox == null) {
-                    setState(() {
-                      _selectedId = null;
-                      for (final b in _boxes) {
-                        b.isSelected = false;
-                      }
-                    });
-                  }*/
                 },
                 onTextFocusChange: (hasFocus, bx) {
                   setState(() {
                     _editingBox = hasFocus ? bx : null;
                     _editingTextBox = hasFocus ? bx : null;
-
-                    // ✨ Yazma modundan çıkınca kutu seçimi kalksın
                     if (!hasFocus) {
                       _selectedId = null;
                       for (final b in _boxes) {
@@ -834,10 +808,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       }
                     }
                   });
-
-                  if (!hasFocus) {
-                    _updateBox(bx); // son değişiklikleri kaydet
-                  }
+                  if (!hasFocus) _updateBox(bx);
                 },
                 inlineToolbar: false,
                 floatOnEdit: false,
@@ -845,11 +816,10 @@ class _ChatScreenState extends State<ChatScreen> {
               );
             }),
 
-            // === Sabit Editör + Toolbar (yalnızca textbox edit + klavye açık) ===
+            // === Yazma Overlay + Toolbar ===
             if (_isTypingOverlayVisible) ...[
               Positioned.fill(
                 child: GestureDetector(
-                  // karanlık alana dokununca kaydet & çık
                   onTap: _saveAndCloseEditor,
                   child: Container(color: Colors.black.withOpacity(0.8)),
                 ),
@@ -861,17 +831,14 @@ class _ChatScreenState extends State<ChatScreen> {
                 child: SafeArea(
                   top: false,
                   child: Padding(
-                    // paneli klavyenin üstüne getir
                     padding: const EdgeInsets.only(bottom: 0),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Editör (önizleme değil; seçilebilir çok satır)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 8),
                           child: Center(child: _buildTypingEditor()),
                         ),
-                        // Sabit yazı düzenleme paneli
                         if (_editingTextBox != null) _buildFixedTextToolbar(_editingTextBox!),
                       ],
                     ),
@@ -888,8 +855,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   key: _trashKey,
                   height: 100,
                   color: _draggingOverTrash
-                      ? Colors.red.withAlpha((0.5 * 255).round())
-                      : Colors.red.withAlpha((0.2 * 255).round()),
+                      ? Colors.red.withOpacity(0.5)
+                      : Colors.red.withOpacity(0.2),
                   child: const Center(
                     child: Icon(Icons.delete, size: 40, color: Colors.red),
                   ),
