@@ -136,14 +136,21 @@ class _ChatScreenState extends State<ChatScreen> {
       (b.height - padV * 2).clamp(1.0, double.infinity).toDouble(),
     );
 
-    // her zaman sabit font
-    const double fixedFont = 24.0;
+    // Auto veya Fixed moda göre font size seç
+    double finalFs;
+    if (b.autoFontSize) {
+      // Auto modda min 24
+      finalFs = b.fixedFontSize < 24 ? 24 : b.fixedFontSize;
+    } else {
+      // Fixed modda 24–48 arası
+      finalFs = b.fixedFontSize.clamp(24.0, 48.0);
+    }
 
     final tp = TextPainter(
       text: TextSpan(
         text: b.text.isEmpty ? ' ' : b.text,
         style: TextStyle(
-          fontSize: fixedFont,
+          fontSize: finalFs,
           fontFamily: b.fontFamily,
           fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
           fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
@@ -154,6 +161,10 @@ class _ChatScreenState extends State<ChatScreen> {
       textAlign: b.align,
       maxLines: null,
     )..layout(maxWidth: contentMaxW);
+
+    b.width  = (tp.size.width + padH * 2).clamp(24.0, screen.width - 32);
+    b.height = (tp.size.height + padV * 2);
+    b.fixedFontSize = finalFs;
 
     // genişlik = en uzun satır
     final needContentW = _maxLineWidth(tp);
@@ -417,39 +428,48 @@ class _ChatScreenState extends State<ChatScreen> {
         onChanged: (v) {
           b.text = v;
 
-          // Kutuyu yazıya göre büyüt (padding: 12/8), min font 12
           const padH = 12.0, padV = 8.0;
           final screen = MediaQuery.of(context).size;
           final kb = MediaQuery.of(context).viewInsets.bottom;
-          final contentMaxW = screen.width - 32 - padH * 2;        // sağ/sol margin 16
-          final contentMaxH = (screen.height - kb) * .35 - padV * 2 + 32;
+          final contentMaxW = screen.width - 32 - padH * 2;
+          // 2 satır yüksekliği (24 punto * 2 + padding)
+          final contentMaxH = (24.0 * 2 + padV * 2);
 
-          final fs = b.autoFontSize
-              ? _fitFontSizeMultiline(b, v, contentMaxW, contentMaxH, minFs: 24)
-              : (b.fixedFontSize < 24 ? 24 : b.fixedFontSize);
+          // Base style
+          final baseStyle = TextStyle(
+            fontFamily: b.fontFamily,
+            fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
+            fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
+            decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+            color: Color(b.textColor),
+          );
 
+          // Satır sayısı kontrolü
+          final lineCount = '\n'.allMatches(v).length + 1;
+          final maxLines = lineCount > 1 ? 2 : 1;
+
+          // Font size hesapla
+          final fs = _fitFontSizeToBox(
+            v,
+            contentMaxW,
+            contentMaxH,
+            minFs: 12,
+            maxFs: 24,
+            maxLines: maxLines,
+            baseStyle: baseStyle,
+          );
+
+          // TextPainter ile gerçek ölçüm
           final tp = TextPainter(
-            text: TextSpan(
-              text: v.isEmpty ? ' ' : v,
-              style: TextStyle(
-                fontSize: fs.toDouble(),
-                fontFamily: b.fontFamily,
-                fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
-                fontStyle:  b.italic ? FontStyle.italic : FontStyle.normal,
-                decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
-              ),
-            ),
+            text: TextSpan(text: v.isEmpty ? ' ' : v, style: baseStyle.copyWith(fontSize: fs)),
             textDirection: TextDirection.ltr,
-            textAlign: b.align,
-            maxLines: null,
+            maxLines: maxLines,
           )..layout(maxWidth: contentMaxW);
 
-          final neededW = tp.size.width;
-          final neededH = tp.size.height;
-
           setState(() {
-            b.width  = (neededW + padH * 2 + 32).toDouble();
-            b.height = (tp.size.height + padV * 2 + 32).toDouble();
+            b.width  = (tp.size.width + padH * 2).clamp(24.0, screen.width - 32);
+            b.height = (tp.size.height + padV * 2).clamp(24.0, contentMaxH);
+            b.fixedFontSize = fs; // kaydet
           });
         },
         onEditingComplete: _saveAndCloseEditor,
@@ -485,6 +505,41 @@ class _ChatScreenState extends State<ChatScreen> {
         lo = mid;
       } else {
         hi = mid;
+      }
+    }
+    return lo;
+  }
+
+  /// Yazıyı kutuya sığdırmak için fontu küçültür.
+  /// Overflow asla olmaz, her zaman sığar.
+  /// maxLines = 1 veya 2 olabilir (return var/yok durumuna göre).
+  double _fitFontSizeToBox(
+    String text,
+    double maxW,
+    double maxH, {
+    double minFs = 12,
+    double maxFs = 24,
+    int maxLines = 1,
+    required TextStyle baseStyle,
+  }) {
+    double lo = minFs, hi = maxFs;
+
+    bool fits(double fs) {
+      final tp = TextPainter(
+        text: TextSpan(text: text.isEmpty ? ' ' : text, style: baseStyle.copyWith(fontSize: fs)),
+        textDirection: TextDirection.ltr,
+        maxLines: maxLines,
+      )..layout(maxWidth: maxW);
+      return tp.size.width <= maxW && tp.size.height <= maxH && !tp.didExceedMaxLines;
+    }
+
+    // Binary search ile uygun fontu bul
+    for (int i = 0; i < 20; i++) {
+      final mid = (lo + hi) / 2;
+      if (fits(mid)) {
+        lo = mid; // bu boyut sığıyor, daha büyüğünü dene
+      } else {
+        hi = mid; // sığmadı, küçült
       }
     }
     return lo;
