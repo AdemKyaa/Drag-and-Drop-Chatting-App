@@ -14,6 +14,8 @@ class ResizableTextBox extends StatefulWidget {
   final void Function(bool)? onDraggingOverTrash;
   final void Function(bool active)? onInteract;
   final void Function(bool hasFocus, BoxItem box)? onTextFocusChange;
+  final VoidCallback? onPanelOpen;
+  final VoidCallback? onPanelClose;
 
   // Eklenen props:
   final bool inlineToolbar;   // burada toolbar çizilsin mi
@@ -37,6 +39,8 @@ class ResizableTextBox extends StatefulWidget {
     this.floatOnEdit = false,
     this.useExternalEditor = false,
     this.onDeselect,
+    this.onPanelOpen,
+    this.onPanelClose,
   });
 
   @override
@@ -126,7 +130,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
 
     if (_fitKey == key && _fitSize != null) return _fitSize!;
 
-    double lo = 1.0, hi = 2000.0;
+    double lo = 12.0, hi = 2000.0;
     final text = b.text.isEmpty ? 'Metin...' : b.text;
 
     bool fits(double fs) {
@@ -331,7 +335,12 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                 contentPadding: EdgeInsets.zero,
               ),
               style: TextStyle(
-                fontSize: (b.autoFontSize ? _fitFontSize(b) : b.fixedFontSize).clamp(6, 2000),
+                fontSize: _fitFontSizeMultiline(
+                  b,
+                  _controller.text,
+                  (b.width - _padH * 2).clamp(1.0, double.infinity).toDouble(),
+                  (b.height - _padV * 2).clamp(1.0, double.infinity).toDouble(),
+                ).clamp(24.0, 400.0),
                 fontFamily: b.fontFamily,
                 fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
                 fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
@@ -340,7 +349,10 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
               ),
               onChanged: (val) {
                 b.text = val;
-
+                if (val.trim().isEmpty) {
+                  widget.onDelete();
+                  return;
+                }
                 // Bu edit sırasında, fontu sabit alıyoruz (auto fit değil),
                 // kutunun ölçüsünü genişlik/ yükseklik ile ayarlıyoruz.
                 final media = MediaQuery.of(context);
@@ -355,7 +367,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                 final double maxBoxW = (screen.width - 32).clamp(24.0, 4096.0);
 
                 final baseStyle = TextStyle(
-                  fontSize: b.fixedFontSize,          // EDIT sırasında sabit font
+                  fontSize: (b.fixedFontSize < 24 ? 24 : b.fixedFontSize),
                   fontFamily: b.fontFamily,
                   fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
                   fontStyle:  b.italic ? FontStyle.italic : FontStyle.normal,
@@ -394,14 +406,12 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
             softWrap: true,
             overflow: TextOverflow.visible,
             style: TextStyle(
-              fontSize: b.autoFontSize
-                  ? _fitFontSizeMultiline(
-                      b,
-                      b.text,
-                      (b.width  - _padH * 2).clamp(1.0, b.width).toDouble(),
-                      (b.height - _padV * 2).clamp(1.0, b.height).toDouble(),
-                    )
-                  : b.fixedFontSize,
+              fontSize: _fitFontSizeMultiline(
+                b,
+                b.text,
+                (b.width - _padH * 2).clamp(1.0, double.infinity).toDouble(),
+                (b.height - _padV * 2).clamp(1.0, double.infinity).toDouble(),
+              ).clamp(24.0, 400.0),
               fontFamily: b.fontFamily,
               fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
               fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
@@ -647,6 +657,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
   Future<void> _openImageEditPanel() async {
     widget.onInteract?.call(true);
     _normalizeRadiusToFactor(widget.box); // px -> factor
+    widget.onPanelOpen?.call();
     await showModalBottomSheet(
       context: context,
       barrierColor: Colors.transparent, // karartma yok
@@ -737,13 +748,17 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
           );
         });
       },
-    ).whenComplete(() => widget.onInteract?.call(false));
+    ).whenComplete(() {
+      widget.onInteract?.call(false);
+      widget.onPanelClose?.call();
+    });
   }
-
+  
   // ==== text panel ====
   Future<void> _openTextBoxEditPanel() async {
     widget.onInteract?.call(true);
     _normalizeRadiusToFactor(widget.box); // px -> factor
+    widget.onPanelOpen?.call();
     await showModalBottomSheet(
       context: context,
       barrierColor: Colors.transparent, // karartma yok
@@ -921,7 +936,9 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
           );
         });
       },
-    ).whenComplete(() => widget.onInteract?.call(false));
+    ).whenComplete(() {
+      widget.onPanelClose?.call();
+    });
   }
 
   double _fitFontSizeMultiline(
@@ -946,7 +963,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     if (_fitKey == key && _fitSize != null) return _fitSize!;
 
     // Arama aralığı
-    double lo = 4.0, hi = 400.0;
+    double lo = 12.0, hi = 400.0;
 
     TextStyle styleFor(double fs) => TextStyle(
       fontSize: fs,

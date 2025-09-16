@@ -27,6 +27,7 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   String? _selectedId;
   bool _isInteracting = false;
+  bool _isPanelOpen = false;
   late final StreamSubscription<QuerySnapshot<Map<String, dynamic>>> _sub;
 
   final CollectionReference<Map<String, dynamic>> messages =
@@ -63,7 +64,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
     _sub = messages
         .where("conversationId", isEqualTo: getConversationId())
-        .orderBy('z')
         .snapshots()
         .listen((snapshot) {
       final incoming =
@@ -124,9 +124,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
     // --- 8px padding ile font-fit + genişlik ayarı ---
     final screen = MediaQuery.of(context).size;
+    final kb = MediaQuery.of(context).viewInsets.bottom; // <-- eklendi
     const padH = 8.0, padV = 8.0;
-    final contentMaxW = screen.width - 32 - padH * 2; // sağ/sol margin 16 + iç pad
-    final contentH    = (b.height - padV * 2).clamp(1, double.infinity);
+    final contentMaxW = screen.width - 32 - padH * 2;
 
     // 1) Yüksekliği aşmayacak en büyük fontu bul
     final fittedFs = _fitFontSizeMultiline(
@@ -141,7 +141,7 @@ class _ChatScreenState extends State<ChatScreen> {
       text: TextSpan(
         text: b.text.isEmpty ? ' ' : b.text,
         style: TextStyle(
-          fontSize: fittedFs,
+          fontSize: fittedFs.toDouble(),
           fontFamily: b.fontFamily,
           fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
           fontStyle:  b.italic ? FontStyle.italic : FontStyle.normal,
@@ -154,8 +154,8 @@ class _ChatScreenState extends State<ChatScreen> {
     )..layout(maxWidth: contentMaxW);
 
     final needContentW = _maxLineWidth(tp).clamp(1, contentMaxW);
-    b.width = (needContentW + padH * 2).clamp(24.0, screen.width - 32);
-    // yüksekliği kullanıcı belirliyor; font zaten sığacak şekilde ayarlı
+    b.width  = (needContentW + padH * 2).clamp(24.0, screen.width - 32).toDouble();
+    b.height = (tp.size.height + padV * 2).clamp(24.0, (screen.height - kb) * .35).toDouble();
 
     // 3) Overlay kapat + görselde seçim KALKSIN
     setState(() {
@@ -175,6 +175,11 @@ class _ChatScreenState extends State<ChatScreen> {
     final newBox = BoxItem(
       id: now.toString(),
       position: const Offset(150, 150),
+      type: "textbox",
+      text: "",
+      fontSize: 12,
+      width: 80,
+      height: 40,
       z: now,
     );
 
@@ -186,6 +191,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _boxes.add(newBox);
       _editingBox = null;
       _selectedId = newBox.id;
+      _editingTextBox = newBox;
     });
 
     // doc id = box.id (eşzamanlılık için tekil)
@@ -260,8 +266,8 @@ class _ChatScreenState extends State<ChatScreen> {
     final newBox = BoxItem(
       id: now.toString(),
       position: const Offset(100, 100),
-      width: w,              // ✨ doğal (gerekirse küçültülmüş) genişlik
-      height: h,             // ✨ doğal (gerekirse küçültülmüş) yükseklik
+      width: w,
+      height: h,
       type: "image",
       imageBytes: bytes,
       z: now,
@@ -277,14 +283,14 @@ class _ChatScreenState extends State<ChatScreen> {
       _selectedId = newBox.id;
     });
 
-    await messages.add({
+    await messages.doc(newBox.id).set({
       ...newBox.toJson(
         getConversationId(),
         widget.currentUserId,
         widget.otherUserId,
       ),
       "createdAt": FieldValue.serverTimestamp(),
-    });
+    }, SetOptions(merge: true));
   }
 
   Future<void> _removeBox(BoxItem box) async {
@@ -325,13 +331,13 @@ class _ChatScreenState extends State<ChatScreen> {
       }
 
       // yalnızca DRAG sırasında seçili yap (edit true iken seçme!)
-      if (!edit) {
+      /*if (!edit) {
         box.isSelected = true;
         _selectedId = box.id;
       } else {
         box.isSelected = false;
         _selectedId = null;
-      }
+      }*/
 
       _editingBox = edit ? box : null;
       box.z = DateTime.now().millisecondsSinceEpoch; // üste al
@@ -361,9 +367,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
     final contentW = w - 24;  // 12+12 padding
     final contentH = h - 16;  // 8+8 padding
+    final textNow = _overlayCtrl?.text ?? b.text; // ***
     final fittedFs = b.autoFontSize
-        ? _fitFontSizeMultiline(b, _overlayCtrl!.text, contentW, contentH)
-        : b.fixedFontSize;
+        ? _fitFontSizeMultiline(b, textNow, contentW, contentH) // ***
+        : (b.fixedFontSize < 12 ? 12 : b.fixedFontSize);
 
     // ilk frame’de odağı overlay editöre ver
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -411,7 +418,7 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         style: TextStyle(
           // multiline için auto mantığını basitleştiriyoruz:
-          fontSize: fittedFs,
+          fontSize: fittedFs.toDouble(),
           fontFamily: b.fontFamily,
           fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
           fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
@@ -419,8 +426,42 @@ class _ChatScreenState extends State<ChatScreen> {
           color: Color(b.textColor),
         ),
         onChanged: (v) {
-          b.text = v;          // canlı önizleme için canvas’ı da güncelle
-          setState(() {});
+          b.text = v;
+
+          // Kutuyu yazıya göre büyüt (padding: 12/8), min font 12
+          const padH = 12.0, padV = 8.0;
+          final screen = MediaQuery.of(context).size;
+          final kb = MediaQuery.of(context).viewInsets.bottom;
+          final contentMaxW = screen.width - 32 - padH * 2;        // sağ/sol margin 16
+          final contentMaxH = (screen.height - kb) * .35 - padV * 2;
+
+          final fs = b.autoFontSize
+              ? _fitFontSizeMultiline(b, v, contentMaxW, contentMaxH, minFs: 24)
+              : (b.fixedFontSize < 24 ? 24 : b.fixedFontSize);
+
+          final tp = TextPainter(
+            text: TextSpan(
+              text: v.isEmpty ? ' ' : v,
+              style: TextStyle(
+                fontSize: fs.toDouble(),
+                fontFamily: b.fontFamily,
+                fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
+                fontStyle:  b.italic ? FontStyle.italic : FontStyle.normal,
+                decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+              ),
+            ),
+            textDirection: TextDirection.ltr,
+            textAlign: b.align,
+            maxLines: null,
+          )..layout(maxWidth: contentMaxW);
+
+          final neededW = tp.size.width.clamp(1, contentMaxW);
+          final neededH = tp.size.height;
+
+          setState(() {
+            b.width  = ((neededW + padH * 2).clamp(24.0, screen.width - 32)).toDouble();
+            b.height = ((neededH + padV * 2).clamp(24.0, (screen.height - kb) * .35)).toDouble();
+          });
         },
         onEditingComplete: _saveAndCloseEditor,
         scrollPhysics: const NeverScrollableScrollPhysics(),
@@ -429,10 +470,10 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   double _fitFontSizeMultiline(BoxItem b, String text, double maxW, double maxH,
-    {double minFs = 6, double maxFs = 200}) {
+    {double minFs = 24, double maxFs = 200}) {
     double lo = minFs, hi = maxFs;
     TextStyle styleFor(double fs) => TextStyle(
-          fontSize: fs,
+          fontSize: fs.toDouble(),
           fontFamily: b.fontFamily,
           fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
           fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
@@ -533,10 +574,6 @@ class _ChatScreenState extends State<ChatScreen> {
             child: Row(
               children: [
                 IconButton(
-                  icon: const Icon(Icons.color_lens, size: 20),
-                  onPressed: () => _showTopColorPalette(_editingTextBox!),
-                ),
-                IconButton(
                   icon: Icon(Icons.format_bold, size: 20, color: b.bold ? Colors.teal : null),
                   onPressed: () {
                     setState(() => b.bold = !b.bold);
@@ -581,33 +618,13 @@ class _ChatScreenState extends State<ChatScreen> {
                   },
                 ),
                 const VerticalDivider(width: 12),
-                IconButton(
-                  icon: const Icon(Icons.vertical_align_top, size: 20),
-                  onPressed: () {
-                    setState(() => b.vAlign = 'top');
-                    _updateBox(b);
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.vertical_align_center, size: 20),
-                  onPressed: () {
-                    setState(() => b.vAlign = 'middle');
-                    _updateBox(b);
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.vertical_align_bottom, size: 20),
-                  onPressed: () {
-                    setState(() => b.vAlign = 'bottom');
-                    _updateBox(b);
-                  },
-                ),
-                const VerticalDivider(width: 12),
                 // Toolbar içi (font kontrolü):
                 InkWell(
                   key: _fontBtnKey,
                   onTap: () async {
-                    final rb = _fontBtnKey.currentContext!.findRenderObject() as RenderBox;
+                    final ctx = _fontBtnKey.currentContext;
+                    if (ctx == null) return; 
+                    final rb = ctx.findRenderObject() as RenderBox;
                     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
                     final btn = rb.localToGlobal(Offset.zero, ancestor: overlay);
                     // menü yüksekliği ~220px varsayalım, butonun biraz üstüne koy
@@ -692,6 +709,7 @@ class _ChatScreenState extends State<ChatScreen> {
           }
         },
         onTap: () {
+          if (_isPanelOpen) return;
           if (_editingTextBox != null) return;
           if (_isTypingOverlayVisible) return; // overlay varsa onTapDown zaten çalıştı
           // boşluğa basınca seçimleri bırak
@@ -715,10 +733,21 @@ class _ChatScreenState extends State<ChatScreen> {
                 onUpdate: () => setState(() {}),
                 onSave: () => _updateBox(box),
                 onSelect: (edit) {
+                  if (!edit) {
+                    setState(() {
+                      for (var b in _boxes) b.isSelected = false;
+                      box.isSelected = true;
+                      _selectedId = box.id;
+                    });
+                  }
                   _selectBox(box, edit: edit);
                   if (edit && box.type == "textbox") {
-                    _overlayCtrl ??= TextEditingController(text: box.text);
-                    _overlayCtrl!.text = box.text;
+                    // *** güvenli şekilde oluştur/yeniden kullan
+                    if (_overlayCtrl == null) { // ***
+                      _overlayCtrl = TextEditingController(text: box.text); // ***
+                    } else { // ***
+                      _overlayCtrl!.text = box.text; // ***
+                    } // ***
                     _overlayCtrl!.selection = TextSelection.collapsed(
                       offset: _overlayCtrl!.text.length,
                     );
@@ -739,14 +768,14 @@ class _ChatScreenState extends State<ChatScreen> {
                   setState(() => _isInteracting = active);
 
                   // ✨ drag bitti, edit modu da yoksa -> seçimi kaldır
-                  if (!active && _editingTextBox == null) {
+                  /*if (!active && _editingTextBox == null) {
                     setState(() {
                       _selectedId = null;
                       for (final b in _boxes) {
                         b.isSelected = false;
                       }
                     });
-                  }
+                  }*/
                 },
                 onTextFocusChange: (hasFocus, bx) {
                   setState(() {
@@ -799,7 +828,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           child: Center(child: _buildTypingEditor()),
                         ),
                         // Sabit yazı düzenleme paneli
-                        _buildFixedTextToolbar(_editingTextBox!),
+                        if (_editingTextBox != null) _buildFixedTextToolbar(_editingTextBox!),
                       ],
                     ),
                   ),
@@ -807,8 +836,8 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ],
 
-            // Çöp alanı (overlay editör açıkken gizle)
-            if (boxesSorted.any((b) => b.isSelected) && !_isTypingOverlayVisible)
+            // Çöp alanı
+            if (_isInteracting && !_isTypingOverlayVisible)
               Align(
                 alignment: Alignment.bottomCenter,
                 child: Container(
