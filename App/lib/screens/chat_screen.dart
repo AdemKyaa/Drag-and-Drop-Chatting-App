@@ -136,15 +136,17 @@ class _ChatScreenState extends State<ChatScreen> {
       (b.height - padV * 2).clamp(1.0, double.infinity).toDouble(),
     );
 
-    // 2) Bu font boyutuyla gerçek satır genişliğini ölç, kutu genişliğini buna göre ayarla
+    // her zaman sabit font
+    const double fixedFont = 24.0;
+
     final tp = TextPainter(
       text: TextSpan(
         text: b.text.isEmpty ? ' ' : b.text,
         style: TextStyle(
-          fontSize: fittedFs.toDouble(),
+          fontSize: fixedFont,
           fontFamily: b.fontFamily,
           fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
-          fontStyle:  b.italic ? FontStyle.italic : FontStyle.normal,
+          fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
           decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
         ),
       ),
@@ -153,14 +155,18 @@ class _ChatScreenState extends State<ChatScreen> {
       maxLines: null,
     )..layout(maxWidth: contentMaxW);
 
-    final needContentW = _maxLineWidth(tp).clamp(1, contentMaxW);
-    b.width  = (needContentW + padH * 2).clamp(24.0, screen.width - 32).toDouble();
-    b.height = (tp.size.height + padV * 2).clamp(24.0, (screen.height - kb) * .35).toDouble();
+    // genişlik = en uzun satır
+    final needContentW = _maxLineWidth(tp);
+    // yükseklik = toplam satır yüksekliği
+    final needContentH = tp.size.height;
+
+    b.width  = (needContentW + padH * 2 + 32).toDouble();
+    b.height = (needContentH + padV * 2 + 32).toDouble();
 
     // 3) Overlay kapat + görselde seçim KALKSIN
     setState(() {
-      b.isSelected     = false;  // 👈 seçim kalksın
-      _selectedId      = null;
+      b.isSelected     = true;
+      _selectedId      = b.id;
       _editingTextBox  = null;
       _uiEpoch++;                // RTB'leri cache kırmak için
     });
@@ -187,6 +193,8 @@ class _ChatScreenState extends State<ChatScreen> {
       for (var b in _boxes) {
         b.isSelected = false;
       }
+      _overlayCtrl?.dispose();   // 👈 eski text controller’ı temizle
+      _overlayCtrl = null;       // 👈 sıfırla
       newBox.isSelected = true;
       _boxes.add(newBox);
       _editingBox = null;
@@ -330,15 +338,6 @@ class _ChatScreenState extends State<ChatScreen> {
         b.isSelected = false;
       }
 
-      // yalnızca DRAG sırasında seçili yap (edit true iken seçme!)
-      /*if (!edit) {
-        box.isSelected = true;
-        _selectedId = box.id;
-      } else {
-        box.isSelected = false;
-        _selectedId = null;
-      }*/
-
       _editingBox = edit ? box : null;
       box.z = DateTime.now().millisecondsSinceEpoch; // üste al
     });
@@ -361,8 +360,8 @@ class _ChatScreenState extends State<ChatScreen> {
     final maxW = screen.width - 32;
     final maxH = (screen.height - kb) * .35;
 
-    final w = b.width.clamp(24.0, maxW).toDouble();
-    final h = b.height.clamp(24.0, maxH).toDouble();
+    final w = b.width.toDouble();
+    final h = b.height.toDouble();
     final effR = _effectiveRadiusFor(b);
 
     final contentW = w - 24;  // 12+12 padding
@@ -398,19 +397,9 @@ class _ChatScreenState extends State<ChatScreen> {
         keyboardType: TextInputType.multiline,
         textInputAction: TextInputAction.newline,
         maxLines: null,
-        minLines: null,
-        expands: true,
+        minLines: 1,
         textAlign: b.align,
-        textAlignVertical: () {
-          switch (b.vAlign) {
-            case 'top':
-              return TextAlignVertical.top;
-            case 'bottom':
-              return TextAlignVertical.bottom;
-            default:
-              return TextAlignVertical.center;
-          }
-        }(),
+        textAlignVertical: TextAlignVertical.top,
         decoration: const InputDecoration(
           border: InputBorder.none,
           isCollapsed: true,
@@ -433,7 +422,7 @@ class _ChatScreenState extends State<ChatScreen> {
           final screen = MediaQuery.of(context).size;
           final kb = MediaQuery.of(context).viewInsets.bottom;
           final contentMaxW = screen.width - 32 - padH * 2;        // sağ/sol margin 16
-          final contentMaxH = (screen.height - kb) * .35 - padV * 2;
+          final contentMaxH = (screen.height - kb) * .35 - padV * 2 + 32;
 
           final fs = b.autoFontSize
               ? _fitFontSizeMultiline(b, v, contentMaxW, contentMaxH, minFs: 24)
@@ -455,12 +444,12 @@ class _ChatScreenState extends State<ChatScreen> {
             maxLines: null,
           )..layout(maxWidth: contentMaxW);
 
-          final neededW = tp.size.width.clamp(1, contentMaxW);
+          final neededW = tp.size.width;
           final neededH = tp.size.height;
 
           setState(() {
-            b.width  = ((neededW + padH * 2).clamp(24.0, screen.width - 32)).toDouble();
-            b.height = ((neededH + padV * 2).clamp(24.0, (screen.height - kb) * .35)).toDouble();
+            b.width  = (neededW + padH * 2 + 32).toDouble();
+            b.height = (tp.size.height + padV * 2 + 32).toDouble();
           });
         },
         onEditingComplete: _saveAndCloseEditor,

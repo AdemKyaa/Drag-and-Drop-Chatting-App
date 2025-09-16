@@ -213,7 +213,6 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
   // ==== gestures ====
   void _onScaleStart(ScaleStartDetails d) {
     widget.onInteract?.call(true);
-    widget.onSelect(false);
 
     _startW = widget.box.width;
     _startH = widget.box.height;
@@ -265,7 +264,6 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
 
     widget.onDraggingOverTrash?.call(false);
     widget.onInteract?.call(false);
-    widget.box.isSelected = false;
     widget.onUpdate();
 
     if (shouldDelete) {
@@ -335,12 +333,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                 contentPadding: EdgeInsets.zero,
               ),
               style: TextStyle(
-                fontSize: _fitFontSizeMultiline(
-                  b,
-                  _controller.text,
-                  (b.width - _padH * 2).clamp(1.0, double.infinity).toDouble(),
-                  (b.height - _padV * 2).clamp(1.0, double.infinity).toDouble(),
-                ).clamp(24.0, 400.0),
+                fontSize: 24,
                 fontFamily: b.fontFamily,
                 fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
                 fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
@@ -405,6 +398,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
             maxLines: null,
             softWrap: true,
             overflow: TextOverflow.visible,
+            textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: _fitFontSizeMultiline(
                 b,
@@ -977,8 +971,8 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
       final tp = TextPainter(
         text: TextSpan(text: text.isEmpty ? ' ' : text, style: styleFor(fs)),
         textDirection: TextDirection.ltr,
-        textAlign: b.align,
-        maxLines: null, // çok satır
+        textAlign: TextAlign.center,
+        maxLines: 1, // çok satır
       )..layout(maxWidth: cw);
       // hem genişlik hem yükseklik sınırlarının içinde mi?
       return tp.size.width <= cw + 0.5 && tp.size.height <= ch + 0.5;
@@ -1031,7 +1025,10 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
         onScaleUpdate: _onScaleUpdate,
         onScaleEnd: _onScaleEnd,
         onDoubleTap: () {
-          if (widget.box.type == "image") {
+          final b = widget.box;
+          b.isSelected = true; // *** her zaman seçili yap
+          widget.onUpdate();
+          if (b.type == "image") {
             _openImageEditPanel();
           } else {
             _openTextBoxEditPanel();
