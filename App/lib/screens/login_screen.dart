@@ -28,17 +28,20 @@ class _LoginScreenState extends State<LoginScreen> {
         await users.doc(userDoc.id).update({"isOnline": true});
 
         Navigator.pushReplacement(
+          // ignore: use_build_context_synchronously
           context,
           MaterialPageRoute(
             builder: (_) => UserListScreen(currentUserId: userDoc.id),
           ),
         );
       } else {
+        // ignore: use_build_context_synchronously
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("❌ Hatalı kullanıcı adı veya şifre")),
         );
       }
     } catch (e) {
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("❌ Hata: $e")),
       );

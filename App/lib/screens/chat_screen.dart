@@ -6,7 +6,6 @@ import 'package:image/image.dart' as img;
 import 'dart:async';
 import '../models/box_item.dart';
 import '../widgets/resizable_text_box.dart';
-import 'dart:math' as math;
 
 class ChatScreen extends StatefulWidget {
   final String currentUserId;
@@ -27,7 +26,7 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   String? _selectedId;
   bool _isInteracting = false;
-  bool _isPanelOpen = false;
+  final bool _isPanelOpen = false;
   late final StreamSubscription<QuerySnapshot<Map<String, dynamic>>> _sub;
 
   final CollectionReference<Map<String, dynamic>> messages =
@@ -55,7 +54,6 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   bool get _isTypingOverlayVisible {
-    final kb = MediaQuery.of(context).viewInsets.bottom;
     return _editingTextBox != null && _editingTextBox!.type == "textbox";
   }
 
@@ -144,7 +142,9 @@ class _ChatScreenState extends State<ChatScreen> {
     );
 
     setState(() {
-      for (var b in _boxes) b.isSelected = false;
+      for (var b in _boxes) {
+        b.isSelected = false;
+      }
       _overlayCtrl?.dispose();
       _overlayCtrl = null;
       newBox.isSelected = true;
@@ -203,6 +203,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (decoded != null) {
       w = decoded.width.toDouble();
       h = decoded.height.toDouble();
+      // ignore: use_build_context_synchronously
       final screen = MediaQuery.of(context).size;
       final maxW = screen.width * 0.8;
       final maxH = screen.height * 0.5;
@@ -225,7 +226,9 @@ class _ChatScreenState extends State<ChatScreen> {
     );
 
     setState(() {
-      for (var b in _boxes) b.isSelected = false;
+      for (var b in _boxes) {
+        b.isSelected = false;
+      }
       newBox.isSelected = true;
       _boxes.add(newBox);
       _editingBox = null;
@@ -283,14 +286,25 @@ class _ChatScreenState extends State<ChatScreen> {
     _updateBox(box);
   }
 
+  int countLines(String text, TextStyle style, double maxWidth) {
+    final tp = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+      maxLines: null,
+    )..layout(maxWidth: maxWidth);
+
+    final lines = tp.computeLineMetrics();
+
+    // sadece gerçek satırları say
+    return lines.where((m) => m.width > 0).length;
+  }
+  int countLinesManual(String text) {
+    return text.split('\n').length;
+  }
+
   // ======================================================
   // ==============  TEXTBOX ÖLÇÜM / FONT-FIT  ============
   // ======================================================
-
-  // Tek satırda (veya 2 satırda) sığdırmak için fontu küçült.
-  // - writeMode = true iken: min..max = 12..24
-  // - writeMode = false & auto = true => minFs = 24, max büyüyebilir (kutuyu da büyütürüz)
-  // - writeMode = false & auto = false => min..max = 24..48
   double _fitFontToConstraint({
     required String text,
     required double maxW,
@@ -300,7 +314,6 @@ class _ChatScreenState extends State<ChatScreen> {
     required double minFs,
     required double maxFs,
   }) {
-    // boş metin bile olsa tek boşlukla ölçelim ki yükseklik 0 olmasın
     final String measureText = (text.isEmpty ? ' ' : text);
 
     bool fits(double fs) {
@@ -349,7 +362,6 @@ class _ChatScreenState extends State<ChatScreen> {
     if (b == null) return;
 
     const padH = 12.0, padV = 8.0;
-    final screen = MediaQuery.of(context).size;
 
     final text = b.text;
     final hasNewline = text.contains('\n');
@@ -367,24 +379,16 @@ class _ChatScreenState extends State<ChatScreen> {
     // AUTO mu FIXED mi?
     double minFs, maxFs;
     if (b.autoFontSize) {
-      // Auto modda kaydederken min 24; üst sınırı kısıtlamıyoruz çünkü kutuyu büyüteceğiz.
       minFs = 24.0;
-      maxFs = 200.0; // kutuyu büyüttüğümüz için font da büyüyebilir
+      maxFs = 24.0;
     } else {
       // Fixed: 24..48 arası
       minFs = 24.0;
-      maxFs = 48.0;
+      maxFs = 24.0;
     }
 
-    // Kaydederken tek satır istiyorsak ekrana sığdırma yok, kutuyu genişletiriz.
-    // Ekran genişliğini aşmaya izin var (canvas sınırsız sayılır).
-    // Ama ölçüm için bir "geçici maxW" lazım. Çok büyük verelim.
-    final double hugeW = 100000; // pratikte sınırsız genişlik
+    const double hugeW = 100000;
 
-    // Önce fs bul:
-    // - Auto: min 24’ten küçük olamaz; tek satırda sığdırmak için fontu büyütebiliriz,
-    //   büyürse kutu da genişleyecek (hugeW ile kısıtlamıyoruz).
-    // - Fixed: seçilen b.fixedFontSize’i 24..48 arasında clamp’leriz.
     double fs;
     if (b.autoFontSize) {
       // min 24, üst sınır 200 — kutu genişleyerek sığdırır.
@@ -402,8 +406,10 @@ class _ChatScreenState extends State<ChatScreen> {
     );
 
     // Kutu ölçüleri: metin + padding
-    final newW = size.width + padH * 2;
-    final newH = size.height + padV * 2;
+    //final lineNum = countLines(text, base.copyWith(fontSize: fs), 100);
+    final lineNum = countLinesManual(text);
+    final newW = size.width + padH * 2 + 32;
+    final newH = size.height + padV * 2 + ((lineNum - 1) * 32);
 
     setState(() {
       b.width = newW;
@@ -422,7 +428,6 @@ class _ChatScreenState extends State<ChatScreen> {
   // ==== OVERLAY (YAZMA MODU) ====
   Widget _buildTypingEditor() {
     final b = _editingTextBox!;
-    final kb = MediaQuery.of(context).viewInsets.bottom;
     final screen = MediaQuery.of(context).size;
 
     // Yazma modunda kutu ekranı aşmamalı → maxW = ekran - 32
@@ -430,9 +435,9 @@ class _ChatScreenState extends State<ChatScreen> {
     // Maks 2 satır yüksekliği (24pt * 2 + padding) kadar göstereceğiz
     const padH = 12.0, padV = 8.0;
     const double maxLineFs = 24.0;
-    final double oneLineH = (maxLineFs * 1.0 * 1.2); // yaklaşık line-height
-    final double maxContentH = oneLineH * 2; // en fazla 2 satır
-    final double maxH = maxContentH + padV * 2;
+    const double oneLineH = (maxLineFs * 1.0 * 1.2); // yaklaşık line-height
+    const double maxContentH = oneLineH * 100; // en fazla 2 satır
+    const double maxH = maxContentH + padV * 2 + 32;
 
     // controller
     _overlayCtrl ??= TextEditingController(text: b.text);
@@ -444,13 +449,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
     final textNow = _overlayCtrl!.text;
     final hasNewline = textNow.contains('\n');
-    final currentLines = _lineCountFromText(textNow);
+    _lineCountFromText(textNow);
     // Return’a basılmadıkça tek satır; varsa en fazla 2 satır
     final maxLines = hasNewline ? 2 : 1;
 
     // Yazma modunda font aralığı 12..24
-    final minFs = 12.0;
-    final maxFs = 24.0;
+    const minFs = 24.0;
+    const maxFs = 24.0;
 
     final base = TextStyle(
       fontFamily: b.fontFamily,
@@ -479,8 +484,10 @@ class _ChatScreenState extends State<ChatScreen> {
       maxLines: maxLines,
     );
 
-    final boxW = (measured.width + padH * 2).clamp(48.0, maxW);
-    final boxH = (measured.height + padV * 2).clamp(40.0, maxH);
+    //final lineNum = countLines(textNow, base.copyWith(fontSize: fs), 100);
+    final lineNum = countLinesManual(textNow);
+    final boxW = (measured.width + padH * 2 + 32);
+    final boxH = (measured.height + padV * 2 + ((lineNum - 1) * 32));
 
     return Container(
       key: _overlayEditorKey,
@@ -497,10 +504,8 @@ class _ChatScreenState extends State<ChatScreen> {
         autofocus: true,
         keyboardType: TextInputType.multiline,
         textInputAction: TextInputAction.newline,
-        maxLines: maxLines,        // return yoksa 1, varsa 2
+        maxLines: null,
         minLines: 1,
-        // wrap yok: tek satırda taşarsa font küçülttük zaten
-        // TextField wrap'ı kontrol etmiyor ama maxLines=1 iken softWrap zaten yok.
         textAlign: b.align,
         textAlignVertical: TextAlignVertical.center,
         decoration: const InputDecoration(
@@ -545,50 +550,6 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   // ==== üstteki toolbar ====
-  Future<void> _showTopColorPalette(BoxItem b) async {
-    final topPad = MediaQuery.of(context).padding.top;
-    final inset = EdgeInsets.only(top: topPad + kToolbarHeight + 8, left: 12, right: 12);
-
-    await showGeneralDialog(
-      context: context,
-      barrierColor: Colors.transparent,
-      barrierDismissible: true,
-      pageBuilder: (_, __, ___) {
-        final colors = [0xFF000000,0xFF2962FF,0xFFD81B60,0xFF2E7D32,0xFFF9A825,0xFFFFFFFF];
-        return Align(
-          alignment: Alignment.topCenter,
-          child: Padding(
-            padding: inset,
-            child: Material(
-              elevation: 6,
-              borderRadius: BorderRadius.circular(8),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                child: Wrap(
-                  spacing: 8, runSpacing: 8,
-                  children: colors.map((c) => GestureDetector(
-                    onTap: () {
-                      setState(() => b.textColor = c);
-                      _updateBox(b);
-                      Navigator.pop(context);
-                    },
-                    child: Container(
-                      width: 32, height: 32,
-                      decoration: BoxDecoration(
-                        color: Color(c),
-                        border: Border.all(color: Colors.black12),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                  )).toList(),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
 
   Widget _buildFixedTextToolbar(BoxItem b) {
     return Material(
@@ -766,7 +727,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 onSelect: (edit) {
                   if (!edit) {
                     setState(() {
-                      for (var b in _boxes) b.isSelected = false;
+                      for (var b in _boxes) {
+                        b.isSelected = false;
+                      }
                       box.isSelected = true;
                       _selectedId = box.id;
                     });
@@ -821,6 +784,7 @@ class _ChatScreenState extends State<ChatScreen> {
               Positioned.fill(
                 child: GestureDetector(
                   onTap: _saveAndCloseEditor,
+                  // ignore: deprecated_member_use
                   child: Container(color: Colors.black.withOpacity(0.8)),
                 ),
               ),
@@ -855,7 +819,9 @@ class _ChatScreenState extends State<ChatScreen> {
                   key: _trashKey,
                   height: 100,
                   color: _draggingOverTrash
+                      // ignore: deprecated_member_use
                       ? Colors.red.withOpacity(0.5)
+                      // ignore: deprecated_member_use
                       : Colors.red.withOpacity(0.2),
                   child: const Center(
                     child: Icon(Icons.delete, size: 40, color: Colors.red),

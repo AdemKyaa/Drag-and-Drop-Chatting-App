@@ -64,10 +64,9 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
   late double _startW;
   late double _startH;
   late double _startRot;
+  late double _startFontSize;
 
   // font-fit cache (tek satır)
-  String? _fitKey;
-  double? _fitSize;
 
   @override
   void initState() {
@@ -116,58 +115,6 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
   }
 
   // ==== tek satır font fit (canvas görünümü için) ====
-  double _fitFontSize(BoxItem b) {
-    final key = [
-      b.text,
-      b.width.toStringAsFixed(2),
-      b.height.toStringAsFixed(2),
-      b.fontFamily,
-      b.bold,
-      b.italic,
-      b.underline,
-      b.align,
-    ].join('|');
-
-    if (_fitKey == key && _fitSize != null) return _fitSize!;
-
-    double lo = 12.0, hi = 2000.0;
-    final text = b.text.isEmpty ? 'Metin...' : b.text;
-
-    bool fits(double fs) {
-      final tp = TextPainter(
-        text: TextSpan(
-          text: text,
-          style: TextStyle(
-            fontSize: fs,
-            fontFamily: b.fontFamily,
-            fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
-            fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
-            decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
-            color: b.text.isEmpty ? Colors.grey : Colors.black,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-        textAlign: b.align,
-        maxLines: 1,
-      );
-      tp.layout(maxWidth: b.width - (_padH * 2));
-      return tp.size.width <= (b.width - _padH * 2) + 0.5 &&
-          tp.size.height <= (b.height - _padV * 2) + 0.5;
-    }
-
-    for (int i = 0; i < 25; i++) {
-      final mid = (lo + hi) / 2;
-      if (fits(mid)) {
-        lo = mid;
-      } else {
-        hi = mid;
-      }
-    }
-
-    _fitKey = key;
-    _fitSize = lo;
-    return lo;
-  }
 
   double _measureSingleLineWidth(BoxItem b, TextStyle style) {
     final tp = TextPainter(
@@ -189,26 +136,6 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
   }
 
   // ==== ölçüm (tek satır) ====
-  Size _measureSingleLine(BoxItem b) {
-    final tp = TextPainter(
-      text: TextSpan(
-        text: b.text.isEmpty ? 'Metin...' : b.text,
-        style: TextStyle(
-          fontSize: (b.autoFontSize ? _fitFontSize(b) : b.fixedFontSize)
-            .clamp(6.0, 2000.0),
-          fontFamily: b.fontFamily,
-          fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
-          fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
-          decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-      maxLines: 1,
-    )..layout();
-
-    // iç padding ekle
-    return Size(tp.width + _padH * 2, tp.height + _padV * 2);
-  }
 
   // ==== gestures ====
   void _onScaleStart(ScaleStartDetails d) {
@@ -218,6 +145,8 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     _startH = widget.box.height;
     _startRot = widget.box.rotation;
     _lastGlobalPoint = d.focalPoint;
+
+    _startFontSize = widget.box.fixedFontSize;
   }
 
   void _onScaleUpdate(ScaleUpdateDetails d) {
@@ -238,7 +167,8 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
         if (d.scale > 0) {
           b.width = (_startW * d.scale).clamp(24.0, 4096.0).toDouble();
           b.height = (_startH * d.scale).clamp(24.0, 4096.0).toDouble();
-          _fitKey = null;
+
+          b.fixedFontSize = (_startFontSize * d.scale).clamp(8.0, 300.0);
         }
         b.rotation = _startRot + d.rotation;
       }
@@ -292,24 +222,29 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
       );
     }
 
+    int getLineCount(String text, TextStyle style, double maxWidth) {
+      final tp = TextPainter(
+        text: TextSpan(text: text, style: style),
+        textDirection: TextDirection.ltr,
+        maxLines: null,
+      )..layout(maxWidth: maxWidth);
+
+      return tp.computeLineMetrics().length;
+    }
+
     final isText = b.type == "textbox";
     final editHere = widget.isEditing && isText;
-
-    final fitted = b.autoFontSize ?_fitFontSizeMultiline(
-          b,
-          (widget.isEditing ? _controller.text : b.text),
-          (b.width  - _padH * 2).clamp(1.0, double.infinity).toDouble(),
-          (b.height - _padV * 2).clamp(1.0, double.infinity).toDouble(),
-        ) : b.fixedFontSize;
-
-    final contentW = b.width  - _padH * 2;
-    final contentH = b.height - _padV * 2;
-    final displayFs = b.autoFontSize ? _fitFontSizeMultiline(
-          b,
-          (widget.isEditing ? _controller.text : b.text),
-          (b.width  - _padH * 2).clamp(1.0, double.infinity).toDouble(),
-          (b.height - _padV * 2).clamp(1.0, double.infinity).toDouble(),
-        ) : b.fixedFontSize;
+    getLineCount(
+      b.text,
+      TextStyle(
+        fontSize: b.fixedFontSize,
+        fontFamily: b.fontFamily,
+        fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
+        fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
+        decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+      ),
+      b.width - _padH * 2,
+    );
 
     return Align(
       alignment: Alignment(
@@ -324,7 +259,8 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
               keyboardType: TextInputType.multiline,
               textInputAction: TextInputAction.newline,
               maxLines: null,
-              minLines: null,
+              minLines: 1,
+              expands: false,
               textAlign: b.align,
               decoration: const InputDecoration(
                 border: InputBorder.none,
@@ -333,7 +269,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                 contentPadding: EdgeInsets.zero,
               ),
               style: TextStyle(
-                fontSize: 24,
+                fontSize: b.fixedFontSize,
                 fontFamily: b.fontFamily,
                 fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
                 fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
@@ -360,7 +296,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                 final double maxBoxW = (screen.width - 32).clamp(24.0, 4096.0);
 
                 final baseStyle = TextStyle(
-                  fontSize: (b.fixedFontSize < 24 ? 24 : b.fixedFontSize),
+                  fontSize: b.fixedFontSize,
                   fontFamily: b.fontFamily,
                   fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
                   fontStyle:  b.italic ? FontStyle.italic : FontStyle.normal,
@@ -388,7 +324,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                   b.height = (multi.height + padH).clamp(24.0, 4096.0).toDouble();
                 }
 
-                _fitKey = null; // display-fit hesabı güncellensin
+// display-fit hesabı güncellensin
                 widget.onUpdate();
               },
               onSubmitted: (_) => widget.onSave(),
@@ -400,12 +336,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
             overflow: TextOverflow.visible,
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: _fitFontSizeMultiline(
-                b,
-                b.text,
-                (b.width - _padH * 2).clamp(1.0, double.infinity).toDouble(),
-                (b.height - _padV * 2).clamp(1.0, double.infinity).toDouble(),
-              ).clamp(24.0, 400.0),
+              fontSize: b.fixedFontSize,
               fontFamily: b.fontFamily,
               fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
               fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
@@ -431,7 +362,6 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
           onPanStart: (_) => widget.onInteract?.call(true),
           onPanUpdate: (d) {
             onDrag(d.delta.dx, d.delta.dy);
-            _fitKey = null;
             widget.onUpdate();
           },
           onPanEnd: (_) {
@@ -880,6 +810,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                                 ),
                                 TextButton(
                                   onPressed: () {
+                                    // ignore: deprecated_member_use
                                     b.textColor = temp.value;
                                     widget.onUpdate();
                                     widget.onSave();
@@ -935,63 +866,6 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
     });
   }
 
-  double _fitFontSizeMultiline(
-    BoxItem b,
-    String text,
-    double maxW,
-    double maxH,
-  ) {
-    // clamp -> double
-    final cw = maxW.clamp(1.0, double.infinity).toDouble();
-    final ch = maxH.clamp(1.0, double.infinity).toDouble();
-
-    // cache key (metin + sınırlar + stil)
-    final key = [
-      text,
-      cw.toStringAsFixed(2),
-      ch.toStringAsFixed(2),
-      b.fontFamily, b.bold, b.italic, b.underline, b.align,
-      'multiline-v2'
-    ].join('|');
-
-    if (_fitKey == key && _fitSize != null) return _fitSize!;
-
-    // Arama aralığı
-    double lo = 12.0, hi = 400.0;
-
-    TextStyle styleFor(double fs) => TextStyle(
-      fontSize: fs,
-      fontFamily: b.fontFamily,
-      fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
-      fontStyle:  b.italic ? FontStyle.italic : FontStyle.normal,
-      decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
-    );
-
-    bool fits(double fs) {
-      final tp = TextPainter(
-        text: TextSpan(text: text.isEmpty ? ' ' : text, style: styleFor(fs)),
-        textDirection: TextDirection.ltr,
-        textAlign: TextAlign.center,
-        maxLines: 1, // çok satır
-      )..layout(maxWidth: cw);
-      // hem genişlik hem yükseklik sınırlarının içinde mi?
-      return tp.size.width <= cw + 0.5 && tp.size.height <= ch + 0.5;
-    }
-
-    // ikili arama
-    for (int i = 0; i < 25; i++) {
-      final mid = (lo + hi) / 2;
-      if (fits(mid)) {
-        lo = mid;
-      } else {
-        hi = mid;
-      }
-    }
-
-    _fitKey = key;
-    _fitSize = lo;
-    return lo;
-  }
 
   @override
   Widget build(BuildContext context) {

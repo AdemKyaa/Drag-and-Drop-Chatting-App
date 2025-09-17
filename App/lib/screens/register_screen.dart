@@ -18,6 +18,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     try {
       final existing = await users.where("username", isEqualTo: username).get();
       if (existing.docs.isNotEmpty) {
+        // ignore: use_build_context_synchronously
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("⚠️ Bu kullanıcı adı zaten alınmış")),
         );
@@ -32,12 +33,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
         "hasNewMessage": false,
       });
 
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("✅ Kayıt başarılı, şimdi giriş yapabilirsiniz")),
       );
 
+      // ignore: use_build_context_synchronously
       Navigator.pop(context); // geri dön → login sayfası
     } catch (e) {
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("❌ Hata: $e")),
       );
