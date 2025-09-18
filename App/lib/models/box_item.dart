@@ -2,8 +2,94 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' show Blob;
 
+class TextRangeStyle {
+  final int start;
+  final int end;
+  final bool bold;
+  final bool italic;
+  final bool underline;
+
+  TextRangeStyle({
+    required this.start,
+    required this.end,
+    this.bold = false,
+    this.italic = false,
+    this.underline = false,
+  });
+
+  Map<String, dynamic> toJson() => {
+    "start": start,
+    "end": end,
+    "bold": bold,
+    "italic": italic,
+    "underline": underline,
+  };
+
+  factory TextRangeStyle.fromJson(Map<String, dynamic> json) {
+    return TextRangeStyle(
+      start: json["start"],
+      end: json["end"],
+      bold: json["bold"] ?? false,
+      italic: json["italic"] ?? false,
+      underline: json["underline"] ?? false,
+    );
+  }
+}
+
+extension BoxItemStyling on BoxItem {
+  /// BoxItem.text içinden, base style'ı kullanarak (font,size,color)
+  /// karakter bazlı bold/italic/underline birleşimleriyle spans üretir.
+  List<TextSpan> styledSpans(TextStyle base) {
+    final text = this.text;
+    if (text.isEmpty) {
+      return [TextSpan(text: "Metin...", style: base.copyWith(color: Colors.grey))];
+    }
+
+    final n = text.length;
+
+    // Varsayılan (tüm metne) kutu-level stil
+    final boldA = List<bool>.filled(n, bold);
+    final italicA = List<bool>.filled(n, italic);
+    final underA = List<bool>.filled(n, underline);
+
+    // Aralıkları uygula (taşmaları kırp)
+    for (final s in styles) {
+      final start = s.start.clamp(0, n);
+      final end   = s.end.clamp(0, n);
+      for (int i = start; i < end; i++) {
+        if (s.bold)      boldA[i]   = true;
+        if (s.italic)    italicA[i] = true;
+        if (s.underline) underA[i]  = true;
+      }
+    }
+
+    // Aynı stil koşullarına sahip karakterleri "run"lara böl
+    final spans = <TextSpan>[];
+    int i = 0;
+    while (i < n) {
+      int j = i + 1;
+      while (j < n &&
+          boldA[j]   == boldA[i] &&
+          italicA[j] == italicA[i] &&
+          underA[j]  == underA[i]) {
+        j++;
+      }
+      spans.add(TextSpan(
+        text: text.substring(i, j),
+        style: base.copyWith(
+          fontWeight: boldA[i]   ? FontWeight.bold   : FontWeight.normal,
+          fontStyle:  italicA[i] ? FontStyle.italic  : FontStyle.normal,
+          decoration: underA[i]  ? TextDecoration.underline : TextDecoration.none,
+        ),
+      ));
+      i = j;
+    }
+    return spans;
+  }
+}
+
 /// Tuval üzerindeki bir nesne (textbox veya image).
-class BoxItem {
+class BoxItem extends ChangeNotifier {
   // Kimlik
   final String id;
 
@@ -20,6 +106,7 @@ class BoxItem {
 
   // Text içerik
   String text;
+  List<TextRangeStyle> styles;
 
   // Görsel içerik (Firestore Blob / bytes)
   Uint8List? imageBytes;
@@ -58,6 +145,7 @@ class BoxItem {
     this.text = "",
     this.imageBytes,
 
+    this.styles = const [],
     this.fontSize = 18,
     this.fontFamily = "Roboto",
     this.bold = false,
@@ -107,6 +195,7 @@ class BoxItem {
       "vAlign": vAlign,
 
       // stil
+      "styles": styles.map((s) => s.toJson()).toList(),
       "borderRadius": borderRadius < 0 ? 0 : borderRadius,
       "backgroundColor": backgroundColor,      // int ARGB
       "backgroundOpacity": backgroundOpacity.clamp(0.0, 1.0),
@@ -165,6 +254,9 @@ class BoxItem {
       text: (json["text"] ?? "") as String,
       imageBytes: _bytesFrom(json["imageBytes"] ?? json["imageBlob"]),
 
+      styles: (json["styles"] as List<dynamic>? ?? [])
+          .map((e) => TextRangeStyle.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
       fontSize: (json["fontSize"] as num?)?.toDouble() ?? 18.0,
       fontFamily: (json["fontFamily"] ?? "Roboto") as String,
       bold: (json["bold"] ?? false) as bool,
@@ -192,5 +284,35 @@ class BoxItem {
       case 'center': return TextAlign.center;
       default:       return TextAlign.center;
     }
+  }
+
+  void update(void Function(BoxItem b) fn) {
+    fn(this);
+    notifyListeners();
+  }
+
+  void toggleBold() {
+    bold = !bold;
+    notifyListeners();
+  }
+
+  void toggleItalic() {
+    italic = !italic;
+    notifyListeners();
+  }
+
+  void toggleUnderline() {
+    underline = !underline;
+    notifyListeners();
+  }
+
+  void setText(String newText) {
+    text = newText;
+    notifyListeners();
+  }
+
+  void setSelected(bool selected) {
+    isSelected = selected;
+    notifyListeners();
   }
 }

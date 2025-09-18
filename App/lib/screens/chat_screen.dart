@@ -6,6 +6,25 @@ import 'package:image/image.dart' as img;
 import 'dart:async';
 import '../models/box_item.dart';
 import '../widgets/resizable_text_box.dart';
+import 'package:flutter/foundation.dart';
+
+class StyledTextController extends TextEditingController {
+  final BoxItem box;
+  StyledTextController({required this.box, String? text}) : super(text: text ?? box.text);
+
+  @override
+  TextSpan buildTextSpan({
+    required BuildContext context,
+    TextStyle? style,
+    required bool withComposing,
+  }) {
+    if (box.text != text) {
+      box.text = text;
+    }
+    final base = (style ?? const TextStyle());
+    return TextSpan(children: box.styledSpans(base));
+  }
+}
 
 class ChatScreen extends StatefulWidget {
   final String currentUserId;
@@ -33,6 +52,8 @@ class _ChatScreenState extends State<ChatScreen> {
       FirebaseFirestore.instance.collection("messages");
 
   final List<BoxItem> _boxes = [];
+  String? _lastTapId;
+  DateTime? _lastTapTime;
   final GlobalKey _trashKey = GlobalKey();
   final GlobalKey _fontBtnKey = GlobalKey();
   bool _draggingOverTrash = false;
@@ -44,7 +65,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final GlobalKey _overlayEditorKey = GlobalKey();
   final GlobalKey _overlayToolbarKey = GlobalKey();
   final FocusNode _overlayFocus = FocusNode();
-  TextEditingController? _overlayCtrl;
+  StyledTextController? _overlayCtrl;
 
   int _uiEpoch = 0; // RTB'leri cache-bust etmek için
 
@@ -62,39 +83,59 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
 
     _sub = messages
-        .where("conversationId", isEqualTo: getConversationId())
-        .snapshots()
-        .listen((snapshot) {
-      final incoming =
-          snapshot.docs.map((d) => BoxItem.fromJson(d.data())).toList();
+      .where("conversationId", isEqualTo: getConversationId())
+      .snapshots()
+      .listen((snapshot) {
+        if (!mounted) return;
 
-      incoming.sort((a, b) => a.z.compareTo(b.z));
+        setState(() {
+          for (final change in snapshot.docChanges) {
+            final data = change.doc.data();
+            if (data == null) continue;
+            final remote = BoxItem.fromJson(data);
 
-      List<BoxItem> merged;
-      if (_isInteracting && _selectedId != null) {
-        final localMap = {for (final b in _boxes) b.id: b};
-        merged = incoming.map((nb) {
-          if (nb.id == _selectedId && localMap[_selectedId!] != null) {
-            return localMap[_selectedId!]!;
+            final idx = _boxes.indexWhere((b) => b.id == remote.id);
+
+            switch (change.type) {
+              case DocumentChangeType.added:
+                if (idx == -1) {
+                  _boxes.add(remote);
+                } else {
+                  // zaten lokalde var → sadece alanları güncelle / seçimi koru
+                  final keepSelected = _boxes[idx].isSelected;
+                  _boxes[idx] = remote;
+                  _boxes[idx].isSelected = keepSelected;
+                }
+                break;
+
+              case DocumentChangeType.modified:
+                if (idx == -1) {
+                  _boxes.add(remote);
+                } else {
+                  // Sürükleme / edit sırasında seçili kutuya gelen remote update'i yok say
+                  final isActiveLocal = (_isInteracting && _selectedId == remote.id);
+                  if (isActiveLocal) {
+                    // ignore remote while interacting
+                  } else {
+                    final keepSelected = _boxes[idx].isSelected;
+                    _boxes[idx] = remote;
+                    _boxes[idx].isSelected = keepSelected;
+                  }
+                }
+                break;
+
+              case DocumentChangeType.removed:
+                if (idx != -1) _boxes.removeAt(idx);
+                break;
+            }
           }
-          return nb;
-        }).toList();
-      } else {
-        merged = incoming;
-      }
 
-      merged.sort((a, b) => a.z.compareTo(b.z));
-      for (final b in merged) {
-        b.isSelected = (b.id == _selectedId);
-      }
-
-      if (!mounted) return;
-      setState(() {
-        _boxes
-          ..clear()
-          ..addAll(merged);
+          _boxes.sort((a, b) => a.z.compareTo(b.z));
+          for (final b in _boxes) {
+            b.isSelected = (b.id == _selectedId);
+          }
+        });
       });
-    });
   }
 
   @override
@@ -165,13 +206,17 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<Uint8List> _compressToFirestoreLimit(Uint8List data) async {
-    final img.Image? decoded = img.decodeImage(data);
+    return await compute(compressImageIsolate, data);
+  }
+
+  // TOP-LEVEL fonksiyon olmalı (class dışında)
+  Uint8List compressImageIsolate(Uint8List data) {
+    final decoded = img.decodeImage(data);
     if (decoded == null) return data;
 
     img.Image resized = decoded;
     const int maxSide = 1280;
-    final int maxOfWH =
-        decoded.width > decoded.height ? decoded.width : decoded.height;
+    final int maxOfWH = decoded.width > decoded.height ? decoded.width : decoded.height;
     if (maxOfWH > maxSide) {
       resized = img.copyResize(
         decoded,
@@ -254,15 +299,22 @@ class _ChatScreenState extends State<ChatScreen> {
     await messages.doc(box.id).delete();
   }
 
+  // ChatScreen state alanına ekle:
+  Timer? _debounce;
+
+  // ChatScreen içindeki _updateBox fonksiyonunu değiştir:
   Future<void> _updateBox(BoxItem box) async {
-    await messages.doc(box.id).set({
-      ...box.toJson(
-        getConversationId(),
-        widget.currentUserId,
-        widget.otherUserId,
-      ),
-      "updatedAt": FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () async {
+      await messages.doc(box.id).set({
+        ...box.toJson(
+          getConversationId(),
+          widget.currentUserId,
+          widget.otherUserId,
+        ),
+        "updatedAt": FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    });
   }
 
   bool _isOverTrash(Offset position) {
@@ -305,6 +357,8 @@ class _ChatScreenState extends State<ChatScreen> {
   // ======================================================
   // ==============  TEXTBOX ÖLÇÜM / FONT-FIT  ============
   // ======================================================
+  final Map<String, double> _fontCache = {};
+
   double _fitFontToConstraint({
     required String text,
     required double maxW,
@@ -314,6 +368,10 @@ class _ChatScreenState extends State<ChatScreen> {
     required double minFs,
     required double maxFs,
   }) {
+    final cacheKey = "$text|$maxW|$maxH|$maxLines";
+    if (_fontCache.containsKey(cacheKey)) {
+      return _fontCache[cacheKey]!;
+    }
     final String measureText = (text.isEmpty ? ' ' : text);
 
     bool fits(double fs) {
@@ -336,6 +394,7 @@ class _ChatScreenState extends State<ChatScreen> {
         hi = mid;  // sığmıyor, küçült
       }
     }
+    _fontCache[cacheKey] = lo;
     return lo;
   }
 
@@ -440,7 +499,10 @@ class _ChatScreenState extends State<ChatScreen> {
     const double maxH = maxContentH + padV * 2 + 32;
 
     // controller
-    _overlayCtrl ??= TextEditingController(text: b.text);
+    if (_overlayCtrl == null || _overlayCtrl!.box != b) {
+      _overlayCtrl?.dispose();
+      _overlayCtrl = StyledTextController(box: b, text: b.text);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_overlayFocus.hasFocus) {
         _overlayFocus.requestFocus();
@@ -513,7 +575,12 @@ class _ChatScreenState extends State<ChatScreen> {
           isCollapsed: true,
           contentPadding: EdgeInsets.zero,
         ),
-        style: base.copyWith(fontSize: fs),
+        // ÖNEMLİ: base stil (font ailesi, renk) + hesaplanan fs
+        style: TextStyle(
+          fontSize: fs,
+          fontFamily: b.fontFamily,
+          color: Color(b.textColor),
+        ),
         onChanged: (v) {
           b.text = v;
 
@@ -538,7 +605,6 @@ class _ChatScreenState extends State<ChatScreen> {
           );
 
           setState(() {
-            // Geçici olarak overlay kutusunu da güncelliyoruz (görselde)
             b.width = s.width + padH * 2;
             b.height = s.height + padV * 2;
             b.fixedFontSize = fitFs;
@@ -572,21 +638,53 @@ class _ChatScreenState extends State<ChatScreen> {
                 IconButton(
                   icon: Icon(Icons.format_bold, size: 20, color: b.bold ? Colors.teal : null),
                   onPressed: () {
-                    setState(() => b.bold = !b.bold);
+                    final sel = _overlayCtrl?.selection;
+                    if (sel != null && sel.start != sel.end) {
+                      // sadece seçili aralığa uygula
+                      b.styles.add(TextRangeStyle(
+                        start: sel.start,
+                        end: sel.end,
+                        bold: true, // italic / underline da benzer
+                      ));
+                    } else {
+                      // tüm metne uygula (eski davranış)
+                      b.bold = !b.bold;
+                    }
+                    setState(() {});
                     _updateBox(b);
                   },
                 ),
                 IconButton(
                   icon: Icon(Icons.format_italic, size: 20, color: b.italic ? Colors.teal : null),
                   onPressed: () {
-                    setState(() => b.italic = !b.italic);
+                    final sel = _overlayCtrl?.selection;
+                    if (sel != null && sel.start != sel.end) {
+                      b.styles.add(TextRangeStyle(
+                        start: sel.start,
+                        end: sel.end,
+                        italic: true,
+                      ));
+                    } else {
+                      b.italic = !b.italic;
+                    }
+                    setState(() {});
                     _updateBox(b);
                   },
                 ),
                 IconButton(
                   icon: Icon(Icons.format_underline, size: 20, color: b.underline ? Colors.teal : null),
                   onPressed: () {
-                    setState(() => b.underline = !b.underline);
+                    final sel = _overlayCtrl?.selection;
+                    if (sel != null && sel.start != sel.end) {
+                      b.styles.add(TextRangeStyle(
+                        start: sel.start,
+                        end: sel.end,
+                        underline: true,
+                      ));
+                    } else {
+                      b.underline = !b.underline;
+                    }
+                    setState(() {});
                     _updateBox(b);
                   },
                 ),
@@ -694,78 +792,87 @@ class _ChatScreenState extends State<ChatScreen> {
           children: [
             // Canvas
             ...boxesSorted.map((box) {
-              String? _lastTapId;
-              DateTime? _lastTapTime;
-              return ResizableTextBox(
-                key: ValueKey('${box.id}#$_uiEpoch'),
-                box: box,
-                isEditing: _editingBox == box,
-                onUpdate: () => setState(() {}),
-                onSave: () => _updateBox(box),
-                
-                onSelect: (edit) {
-                  final now = DateTime.now();
-                  final isDoubleTap = (_lastTapId == box.id &&
-                      _lastTapTime != null &&
-                      now.difference(_lastTapTime!) < const Duration(milliseconds: 400));
+              return AnimatedBuilder(
+                animation: box, // ChangeNotifier bir Listenable'dır
+                builder: (context, _) {
+                  return ResizableTextBox(
+                    key: ValueKey('${box.id}#$_uiEpoch'),
+                    box: box,
+                    isEditing: _editingBox == box,
+                    onUpdate: () => setState(() {}),
+                    onSave: () => _updateBox(box),
 
-                  _lastTapId = box.id;
-                  _lastTapTime = now;
+                    onSelect: (edit) {
+                      final now = DateTime.now();
+                      final isDoubleTap = (_lastTapId == box.id &&
+                          _lastTapTime != null &&
+                          now.difference(_lastTapTime!) < const Duration(milliseconds: 400));
 
-                  setState(() {
-                    for (var b in _boxes) b.isSelected = false;
-                    box.isSelected = true;
-                    _selectedId = box.id;
-                  });
+                      _lastTapId = box.id;
+                      _lastTapTime = now;
 
-                  if (isDoubleTap) {
-                    // Çift tık → sadece resize handles aktif (edit yok)
-                    _editingBox = null;
-                    _editingTextBox = null;
-                  } else {
-                    _selectBox(box, edit: edit);
-                    if (edit && box.type == "textbox") {
-                      if (_overlayCtrl == null) {
-                        _overlayCtrl = TextEditingController(text: box.text);
+                      // tek seçim kalsın
+                      setState(() {
+                        for (var b in _boxes) b.isSelected = false;
+                        box.isSelected = true;
+                        _selectedId = box.id;
+                      });
+
+                      if (isDoubleTap) {
+                        _editingBox = null;
+                        _editingTextBox = null;
                       } else {
-                        _overlayCtrl!.text = box.text;
+                        _selectBox(box, edit: edit);
+                        if (edit && box.type == "textbox") {
+                          if (_overlayCtrl == null) {
+                            _overlayCtrl = StyledTextController(box: box, text: box.text);
+                          } else {
+                            _overlayCtrl!.text = box.text;
+                          }
+                          _overlayCtrl!.selection =
+                              TextSelection.collapsed(offset: _overlayCtrl!.text.length);
+
+                          setState(() => _editingTextBox = box);
+                        }
                       }
-                      _overlayCtrl!.selection = TextSelection.collapsed(
-                        offset: _overlayCtrl!.text.length,
-                      );
-                      setState(() => _editingTextBox = box);
-                    }
-                  }
+                    },
+
+                    onDeselect: () {
+                      setState(() {
+                        box.isSelected = false;
+                        if (_selectedId == box.id) _selectedId = null;
+                      });
+                      _updateBox(box);
+                    },
+
+                    onDelete: () => _removeBox(box),
+                    isOverTrash: _isOverTrash,
+                    onDraggingOverTrash: (isOver) => setState(() => _draggingOverTrash = isOver),
+
+                    onInteract: (active) {
+                      // sürükleme/resize sırasında remote güncellemesini yok saymamız için bu önemli
+                      setState(() => _isInteracting = active);
+                    },
+
+                    onTextFocusChange: (hasFocus, bx) {
+                      setState(() {
+                        _editingBox = hasFocus ? bx : null;
+                        _editingTextBox = hasFocus ? bx : null;
+                        if (!hasFocus) {
+                          _selectedId = null;
+                          for (final b in _boxes) {
+                            b.isSelected = false;
+                          }
+                        }
+                      });
+                      if (!hasFocus) _updateBox(bx);
+                    },
+
+                    inlineToolbar: false,
+                    floatOnEdit: false,
+                    useExternalEditor: true,
+                  );
                 },
-                onDeselect: () {
-                  setState(() {
-                    box.isSelected = false;
-                    if (_selectedId == box.id) _selectedId = null;
-                  });
-                  _updateBox(box);
-                },
-                onDelete: () => _removeBox(box),
-                isOverTrash: _isOverTrash,
-                onDraggingOverTrash: (isOver) => setState(() => _draggingOverTrash = isOver),
-                onInteract: (active) {
-                  setState(() => _isInteracting = active);
-                },
-                onTextFocusChange: (hasFocus, bx) {
-                  setState(() {
-                    _editingBox = hasFocus ? bx : null;
-                    _editingTextBox = hasFocus ? bx : null;
-                    if (!hasFocus) {
-                      _selectedId = null;
-                      for (final b in _boxes) {
-                        b.isSelected = false;
-                      }
-                    }
-                  });
-                  if (!hasFocus) _updateBox(bx);
-                },
-                inlineToolbar: false,
-                floatOnEdit: false,
-                useExternalEditor: false,
               );
             }),
 
