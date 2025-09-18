@@ -209,7 +209,7 @@ class _ChatScreenState extends State<ChatScreen> {
     return await compute(compressImageIsolate, data);
   }
 
-  // TOP-LEVEL fonksiyon olmalı (class dışında)
+  // chat_screen.dart (importlardan sonra, top-level)
   Uint8List compressImageIsolate(Uint8List data) {
     final decoded = img.decodeImage(data);
     if (decoded == null) return data;
@@ -240,15 +240,23 @@ class _ChatScreenState extends State<ChatScreen> {
     if (picked == null) return;
 
     Uint8List bytes = await picked.readAsBytes();
-    bytes = await _compressToFirestoreLimit(bytes);
 
-    // doğal boyutları bul ve ekrana sığdır
+    // Debug'da istersen sıkıştırmayı atlayalım (pipeline'ı test etmek için):
+    if (!kDebugMode) {
+      try {
+        bytes = await compute(compressImageIsolate, bytes);
+      } catch (e, st) {
+        debugPrint('⚠️ compress failed, continue with original bytes: $e\n$st');
+        // bytes olduğu gibi kalsın
+      }
+    }
+
+    // doğal boyutlar
     final decoded = img.decodeImage(bytes);
     double w = 240, h = 180;
     if (decoded != null) {
       w = decoded.width.toDouble();
       h = decoded.height.toDouble();
-      // ignore: use_build_context_synchronously
       final screen = MediaQuery.of(context).size;
       final maxW = screen.width * 0.8;
       final maxH = screen.height * 0.5;
@@ -270,16 +278,16 @@ class _ChatScreenState extends State<ChatScreen> {
       z: now,
     );
 
+    // EKRANDA HEMEN GÖRÜNSÜN
     setState(() {
-      for (var b in _boxes) {
-        b.isSelected = false;
-      }
+      for (var b in _boxes) b.isSelected = false;
       newBox.isSelected = true;
       _boxes.add(newBox);
       _editingBox = null;
       _selectedId = newBox.id;
     });
 
+    // Firestore'a yaz (Blob alan adı "imageBytes" ile aynı)
     await messages.doc(newBox.id).set({
       ...newBox.toJson(
         getConversationId(),
@@ -803,38 +811,40 @@ class _ChatScreenState extends State<ChatScreen> {
                     onSave: () => _updateBox(box),
 
                     onSelect: (edit) {
-                      final now = DateTime.now();
-                      final isDoubleTap = (_lastTapId == box.id &&
-                          _lastTapTime != null &&
-                          now.difference(_lastTapTime!) < const Duration(milliseconds: 400));
-
-                      _lastTapId = box.id;
-                      _lastTapTime = now;
-
-                      // tek seçim kalsın
                       setState(() {
-                        for (var b in _boxes) b.isSelected = false;
+                        // önce herkesin seçimini kaldır
+                        for (final other in _boxes) {
+                          other.isSelected = false;
+                        }
+                        // sadece bu kutu seçili
                         box.isSelected = true;
                         _selectedId = box.id;
+
+                        if (edit) {
+                          if (box.type == "textbox") {
+                            // Text yazım overlay'i
+                            _editingBox = null;        // image handle modu kapalı
+                            if (_overlayCtrl == null) {
+                              _overlayCtrl = StyledTextController(box: box, text: box.text);
+                            } else {
+                              _overlayCtrl!.text = box.text;
+                            }
+                            _overlayCtrl!.selection =
+                                TextSelection.collapsed(offset: _overlayCtrl!.text.length);
+                            _editingTextBox = box;     // overlay açılır
+                          } else {
+                            // Image → resize handle'ları göstermek için isEditing=true
+                            _editingTextBox = null;    // overlay yok
+                            _editingBox = box;         // bu widget için isEditing=true olur
+                          }
+                        } else {
+                          // sadece seç (edit/handle açık değil)
+                          _editingTextBox = null;
+                          _editingBox = null;
+                        }
                       });
 
-                      if (isDoubleTap) {
-                        _editingBox = null;
-                        _editingTextBox = null;
-                      } else {
-                        _selectBox(box, edit: edit);
-                        if (edit && box.type == "textbox") {
-                          if (_overlayCtrl == null) {
-                            _overlayCtrl = StyledTextController(box: box, text: box.text);
-                          } else {
-                            _overlayCtrl!.text = box.text;
-                          }
-                          _overlayCtrl!.selection =
-                              TextSelection.collapsed(offset: _overlayCtrl!.text.length);
-
-                          setState(() => _editingTextBox = box);
-                        }
-                      }
+                      _updateBox(box);
                     },
 
                     onDeselect: () {

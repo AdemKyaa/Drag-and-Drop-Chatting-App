@@ -943,14 +943,23 @@ Row(
         },
         onTap: () {
           final b = widget.box;
-          if (b.type == "textbox") {
-            widget.onSelect(true); // edit modunu aç
-            // her durumda odak iste
-            Future.microtask(() {
-              if (!_focusNode.hasFocus) _focusNode.requestFocus();
-            });
+          final alreadySelected = b.isSelected;
+
+          if (!alreadySelected) {
+            // 1. tık → sadece seç
+            widget.onSelect(false);
           } else {
-            //widget.onSelect(false);
+            // 2. tık (seçiliyken)
+            if (b.type == "textbox") {
+              // textbox → yazı yazma moduna geç
+              widget.onSelect(true);
+              Future.microtask(() {
+                if (!_focusNode.hasFocus) _focusNode.requestFocus();
+              });
+            } else {
+              // image → sadece resize handle'larını aç (overlay/klavye yok)
+              widget.onSelect(true);
+            }
           }
         },
         child: Transform.rotate(
@@ -969,6 +978,7 @@ Row(
                   ),
 
                 // ana kutu
+                // ana kutu
                 Positioned(
                   left: 0,
                   top: (showToolbar ? (_toolbarH + 6) : 0),
@@ -982,6 +992,8 @@ Row(
                           ? const EdgeInsets.symmetric(horizontal: 12, vertical: 6)
                           : EdgeInsets.zero,
                       decoration: BoxDecoration(
+                        // 🔧 borderRadius EKLENDİ → border da yuvarlak olur
+                        borderRadius: BorderRadius.circular(effR),
                         color: b.type == "image"
                             ? Colors.transparent
                             : Color(b.backgroundColor).withAlpha(
@@ -997,7 +1009,7 @@ Row(
                 ),
 
                 // handle'lar
-                if (b.isSelected)
+                if (widget.isEditing && b.type == "image")
                   Positioned(
                     left: 0,
                     top: (showToolbar ? (_toolbarH + 6) : 0),
@@ -1006,7 +1018,7 @@ Row(
                       height: b.height,
                       child: Stack(
                         clipBehavior: Clip.none,
-                        children: b.type == "image" ? _buildResizeHandles(b) : [],
+                        children: _buildResizeHandles(b),
                       ),
                     ),
                   ),
