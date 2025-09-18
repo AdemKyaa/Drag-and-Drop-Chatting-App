@@ -201,7 +201,6 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
       return;
     }
     widget.onSave();
-    widget.onDeselect?.call();
   }
 
   // ==== content ====
@@ -282,13 +281,10 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                   widget.onDelete();
                   return;
                 }
-                // Bu edit sırasında, fontu sabit alıyoruz (auto fit değil),
-                // kutunun ölçüsünü genişlik/ yükseklik ile ayarlıyoruz.
+
                 final media = MediaQuery.of(context);
                 final screen = media.size;
 
-                // yazarken tek satır sığdığı sürece genişlet,
-                // sığmazsa genişliği max yap, çok satır yüksekliği arttır
                 const padW = _padH * 2;
                 const padH = _padV * 2;
 
@@ -305,8 +301,6 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
 
                 final singleLineW = _measureSingleLineWidth(b, baseStyle);
                 if (singleLineW + padW <= maxBoxW) {
-                  // Tek satır sığıyor → genişliği tek satıra göre ayarla, yükseklik 1 satır
-                  // son harf taşmasın diye +1 ekliyoruz (zaten _measureSingleLineWidth’te var)
                   b.width  = (singleLineW + padW).clamp(24.0, 4096.0).toDouble();
 
                   // 1 satır yüksekliği
@@ -324,7 +318,6 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                   b.height = (multi.height + padH).clamp(24.0, 4096.0).toDouble();
                 }
 
-// display-fit hesabı güncellensin
                 widget.onUpdate();
               },
               onSubmitted: (_) => widget.onSave(),
@@ -334,7 +327,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
             maxLines: null,
             softWrap: true,
             overflow: TextOverflow.visible,
-            textAlign: TextAlign.center,
+            textAlign: b.align,
             style: TextStyle(
               fontSize: b.fixedFontSize,
               fontFamily: b.fontFamily,
@@ -536,29 +529,6 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                     widget.onSave();
                   },
                 ),
-                const VerticalDivider(),
-                TextButton(
-                  onPressed: () {
-                    b.autoFontSize = !b.autoFontSize;
-                    widget.onUpdate();
-                    widget.onSave();
-                  },
-                  child: Text(b.autoFontSize ? "Auto" : "Fixed"),
-                ),
-                if (!b.autoFontSize)
-                  SizedBox(
-                    width: 140,
-                    child: Slider(
-                      value: b.fixedFontSize,
-                      min: 6,
-                      max: 200,
-                      onChanged: (v) {
-                        b.fixedFontSize = v;
-                        widget.onUpdate();
-                      },
-                      onChangeEnd: (_) => widget.onSave(),
-                    ),
-                  ),
               ],
             ),
           ),
@@ -693,15 +663,6 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
         int localBgColor = b.backgroundColor;
 
         Color cFrom(int v) => Color(v);
-        final swatches = <int>[
-          0xFFFFFFFF,
-          0xFFF8F9FA,
-          0xFFFFF3CD,
-          0xFFE3F2FD,
-          0xFFE8F5E9,
-          0xFFFFEBEE,
-          0xFF212121,
-        ];
 
         return StatefulBuilder(builder: (_, setSt) {
           return SafeArea(
@@ -710,39 +671,51 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text("Metin Kutusu Ayarları", style: TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    height: 40,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: swatches.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 8),
-                      itemBuilder: (_, i) {
-                        final color = swatches[i];
-                        return GestureDetector(
-                          onTap: () {
-                            setSt(() => localBgColor = color);
-                            b.backgroundColor = color;
-                            widget.onUpdate();
-                            widget.onSave();
-                          },
-                          child: Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: cFrom(color),
-                              border: Border.all(
-                                color: color == localBgColor ? Colors.teal : Colors.black12,
-                                width: color == localBgColor ? 2 : 1,
-                              ),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
+                  // --- Arka Plan Rengi (renk çarkı ile) ---
+const SizedBox(height: 8),
+Row(
+  children: [
+    const Text("Arka Plan Rengi"),
+    const SizedBox(width: 12),
+    OutlinedButton.icon(
+      icon: const Icon(Icons.color_lens),
+      label: const Text("Renk Seç"),
+      onPressed: () async {
+        Color temp = Color(b.backgroundColor);
+        await showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text("Arka Plan Rengi"),
+            content: SingleChildScrollView(
+              child: ColorPicker(
+                pickerColor: temp,
+                onColorChanged: (c) => temp = c,
+                paletteType: PaletteType.hsvWithHue,
+                enableAlpha: false,
+                displayThumbColor: true,
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("İptal"),
+              ),
+              TextButton(
+                onPressed: () {
+                  b.backgroundColor = temp.value;
+                  widget.onUpdate();
+                  widget.onSave();
+                  Navigator.pop(context);
+                },
+                child: const Text("Seç"),
+              ),
+            ],
+          ),
+        );
+      },
+    ),
+  ],
+),
                   Row(
                     children: [
                       const Text("BG Opacity"),
@@ -900,7 +873,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
         onScaleEnd: _onScaleEnd,
         onDoubleTap: () {
           final b = widget.box;
-          b.isSelected = true; // *** her zaman seçili yap
+          b.isSelected = true;
           widget.onUpdate();
           if (b.type == "image") {
             _openImageEditPanel();
@@ -917,7 +890,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
               if (!_focusNode.hasFocus) _focusNode.requestFocus();
             });
           } else {
-            widget.onSelect(false);
+            //widget.onSelect(false);
           }
         },
         child: Transform.rotate(
@@ -944,15 +917,20 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
                     child: Container(
                       width: b.width,
                       height: b.height,
-                      color: b.type == "image"
-                          ? Colors.transparent
-                          : Color(b.backgroundColor).withAlpha(
-                              (b.backgroundOpacity * 255).clamp(0, 255).round(),
-                            ),
                       alignment: Alignment.center,
                       padding: b.type == "textbox"
                           ? const EdgeInsets.symmetric(horizontal: 12, vertical: 6)
                           : EdgeInsets.zero,
+                      decoration: BoxDecoration(
+                        color: b.type == "image"
+                            ? Colors.transparent
+                            : Color(b.backgroundColor).withAlpha(
+                                (b.backgroundOpacity * 255).clamp(0, 255).round(),
+                              ),
+                        border: b.isSelected
+                            ? Border.all(color: Colors.blueAccent, width: 2)
+                            : null,
+                      ),
                       child: _buildContent(b),
                     ),
                   ),

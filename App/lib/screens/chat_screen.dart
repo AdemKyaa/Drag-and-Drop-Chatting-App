@@ -495,7 +495,7 @@ class _ChatScreenState extends State<ChatScreen> {
       height: boxH,
       padding: const EdgeInsets.symmetric(horizontal: padH, vertical: padV),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Color(b.backgroundColor),
         borderRadius: BorderRadius.circular(_effectiveRadiusFor(b)),
       ),
       child: TextField(
@@ -552,12 +552,14 @@ class _ChatScreenState extends State<ChatScreen> {
   // ==== üstteki toolbar ====
 
   Widget _buildFixedTextToolbar(BoxItem b) {
+    final screen = MediaQuery.of(context).size;
     return Material(
       key: _overlayToolbarKey,
       elevation: 6,
       color: Colors.white,
       child: SizedBox(
         height: 48,
+        width: screen.width,
         child: SingleChildScrollView(
           controller: _toolbarScroll,
           scrollDirection: Axis.horizontal,
@@ -646,32 +648,6 @@ class _ChatScreenState extends State<ChatScreen> {
                     child: Icon(Icons.font_download, size: 20),
                   ),
                 ),
-                const SizedBox(width: 8),
-                TextButton(
-                  onPressed: () {
-                    setState(() => b.autoFontSize = !b.autoFontSize);
-                    // auto kapanınca fixedFontSize 24..48 aralığında dursun
-                    if (!b.autoFontSize) {
-                      b.fixedFontSize = b.fixedFontSize.clamp(24.0, 48.0);
-                    } else {
-                      // auto açılınca min 24 kuralı
-                      if (b.fixedFontSize < 24.0) b.fixedFontSize = 24.0;
-                    }
-                    _updateBox(b);
-                  },
-                  child: Text(b.autoFontSize ? "Auto" : "Fixed"),
-                ),
-                if (!b.autoFontSize)
-                  SizedBox(
-                    width: 160,
-                    child: Slider(
-                      value: b.fixedFontSize.clamp(24.0, 48.0),
-                      min: 24,
-                      max: 48,
-                      onChanged: (v) => setState(() => b.fixedFontSize = v),
-                      onChangeEnd: (_) => _updateBox(b),
-                    ),
-                  ),
               ],
             ),
           ),
@@ -718,33 +694,47 @@ class _ChatScreenState extends State<ChatScreen> {
           children: [
             // Canvas
             ...boxesSorted.map((box) {
+              String? _lastTapId;
+              DateTime? _lastTapTime;
               return ResizableTextBox(
                 key: ValueKey('${box.id}#$_uiEpoch'),
                 box: box,
                 isEditing: _editingBox == box,
                 onUpdate: () => setState(() {}),
                 onSave: () => _updateBox(box),
+                
                 onSelect: (edit) {
-                  if (!edit) {
-                    setState(() {
-                      for (var b in _boxes) {
-                        b.isSelected = false;
+                  final now = DateTime.now();
+                  final isDoubleTap = (_lastTapId == box.id &&
+                      _lastTapTime != null &&
+                      now.difference(_lastTapTime!) < const Duration(milliseconds: 400));
+
+                  _lastTapId = box.id;
+                  _lastTapTime = now;
+
+                  setState(() {
+                    for (var b in _boxes) b.isSelected = false;
+                    box.isSelected = true;
+                    _selectedId = box.id;
+                  });
+
+                  if (isDoubleTap) {
+                    // Çift tık → sadece resize handles aktif (edit yok)
+                    _editingBox = null;
+                    _editingTextBox = null;
+                  } else {
+                    _selectBox(box, edit: edit);
+                    if (edit && box.type == "textbox") {
+                      if (_overlayCtrl == null) {
+                        _overlayCtrl = TextEditingController(text: box.text);
+                      } else {
+                        _overlayCtrl!.text = box.text;
                       }
-                      box.isSelected = true;
-                      _selectedId = box.id;
-                    });
-                  }
-                  _selectBox(box, edit: edit);
-                  if (edit && box.type == "textbox") {
-                    if (_overlayCtrl == null) {
-                      _overlayCtrl = TextEditingController(text: box.text);
-                    } else {
-                      _overlayCtrl!.text = box.text;
+                      _overlayCtrl!.selection = TextSelection.collapsed(
+                        offset: _overlayCtrl!.text.length,
+                      );
+                      setState(() => _editingTextBox = box);
                     }
-                    _overlayCtrl!.selection = TextSelection.collapsed(
-                      offset: _overlayCtrl!.text.length,
-                    );
-                    setState(() => _editingTextBox = box);
                   }
                 },
                 onDeselect: () {
