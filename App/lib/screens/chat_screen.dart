@@ -793,7 +793,7 @@ class _ChatScreenState extends State<ChatScreen> {
             // Canvas
             ...boxesSorted.map((box) {
               return AnimatedBuilder(
-                animation: box, // ChangeNotifier bir Listenable'dır
+                animation: box,
                 builder: (context, _) {
                   return ResizableTextBox(
                     key: ValueKey('${box.id}#$_uiEpoch'),
