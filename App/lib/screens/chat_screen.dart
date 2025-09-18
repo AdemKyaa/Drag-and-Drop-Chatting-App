@@ -762,6 +762,8 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  bool _tapInsideAnyBox = false;
+
   @override
   Widget build(BuildContext context) {
     final boxesSorted = [..._boxes]..sort((a, b) => a.z.compareTo(b.z));
@@ -777,21 +779,30 @@ class _ChatScreenState extends State<ChatScreen> {
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onTapDown: (d) {
+          // (mevcut overlay kapatma kodun kalsın)
           if (_isTypingOverlayVisible) {
             final gp = d.globalPosition;
             if (_hit(_overlayToolbarKey, gp) || _hit(_overlayEditorKey, gp)) return;
             _saveAndCloseEditor();
           }
+
+          // ⬇️ burada "tık bir kutunun içindeyse" işaretle
+          final p = d.localPosition;
+          _tapInsideAnyBox = boxesSorted.any((b) {
+            final rect = Rect.fromLTWH(b.position.dx, b.position.dy, b.width, b.height);
+            return rect.contains(p); // rotasyonu kabaca bbox ile es geçiyoruz
+          });
         },
         onTap: () {
+          // ⬇️ kutu üstüne tıklandıysa seçimi TEMİZLEME
+          if (_tapInsideAnyBox) { _tapInsideAnyBox = false; return; }
+
           if (_isPanelOpen) return;
           if (_editingTextBox != null) return;
           if (_isTypingOverlayVisible) return;
           FocusScope.of(context).unfocus();
           setState(() {
-            for (var b in boxesSorted) {
-              b.isSelected = false;
-            }
+            for (var b in boxesSorted) { b.isSelected = false; }
             _editingBox = null;
             _selectedId = null;
           });

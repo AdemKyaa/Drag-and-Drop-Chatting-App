@@ -139,6 +139,9 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
 
   // ==== gestures ====
   void _onScaleStart(ScaleStartDetails d) {
+    if (!widget.box.isSelected) {
+      widget.onSelect(false);
+    }
     widget.onInteract?.call(true);
 
     _startW = widget.box.width;
@@ -412,6 +415,8 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
         top: top,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
+          onTap: () {},          // 🔧 tap'ı tüket
+          onTapDown: (_) {},     // 🔧 ekstra güvence
           onPanStart: (_) => widget.onInteract?.call(true),
           onPanUpdate: (d) {
             onDrag(d.delta.dx, d.delta.dy);
@@ -426,7 +431,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
             height: s,
             decoration: BoxDecoration(
               color: const Color.fromARGB(120, 0, 0, 0),
-              shape: BoxShape.circle, // %100 radius
+              shape: BoxShape.circle,
               border: Border.all(color: Colors.white70, width: 1),
             ),
           ),
@@ -935,6 +940,7 @@ Row(
           final b = widget.box;
           b.isSelected = true;
           widget.onUpdate();
+          widget.onSelect(false);
           if (b.type == "image") {
             _openImageEditPanel();
           } else {
@@ -946,18 +952,23 @@ Row(
           final alreadySelected = b.isSelected;
 
           if (!alreadySelected) {
-            // 1. tık → sadece seç
-            widget.onSelect(false);
+            if (b.type == "image") {
+              // image: ilk tıkta handle + outline
+              widget.onSelect(false); // sadece seç
+            } else {
+              // textbox: ilk tık sadece seç
+              widget.onSelect(false);
+            }
+            b.isSelected = true;
           } else {
-            // 2. tık (seçiliyken)
             if (b.type == "textbox") {
-              // textbox → yazı yazma moduna geç
+              // seçiliyken ikinci tık: edit
               widget.onSelect(true);
               Future.microtask(() {
                 if (!_focusNode.hasFocus) _focusNode.requestFocus();
               });
             } else {
-              // image → sadece resize handle'larını aç (overlay/klavye yok)
+              // image: seçiliyken tekrar tıkla → handle zaten açık kalsın
               widget.onSelect(true);
             }
           }
@@ -977,7 +988,6 @@ Row(
                     child: _buildTextInlineToolbar(b),
                   ),
 
-                // ana kutu
                 // ana kutu
                 Positioned(
                   left: 0,
@@ -999,29 +1009,43 @@ Row(
                             : Color(b.backgroundColor).withAlpha(
                                 (b.backgroundOpacity * 255).clamp(0, 255).round(),
                               ),
-                        border: b.isSelected
-                            ? Border.all(color: Colors.blueAccent, width: 2)
-                            : null,
                       ),
                       child: _buildContent(b),
                     ),
                   ),
                 ),
 
-                // handle'lar
-                if (widget.isEditing && b.type == "image")
-                  Positioned(
-                    left: 0,
-                    top: (showToolbar ? (_toolbarH + 6) : 0),
-                    child: SizedBox(
-                      width: b.width,
-                      height: b.height,
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: _buildResizeHandles(b),
+                if (b.isSelected)
+                Positioned(
+                  left: 0,
+                  top: (showToolbar ? (_toolbarH + 6) : 0),
+                  child: IgnorePointer( // gesture’ları engellemesin
+                    child: CustomPaint(
+                      size: Size(b.width, b.height),
+                      painter: _OutlinePainter(
+                        radius: effR,
+                        show: true,
+                        color: Colors.blueAccent,
+                        strokeWidth: 2,
                       ),
                     ),
                   ),
+                ),
+
+                // handle'lar
+                if (b.type == "image" && widget.isEditing)
+                Positioned(
+                  left: 0,
+                  top: (showToolbar ? (_toolbarH + 6) : 0),
+                  child: SizedBox(
+                    width: b.width,
+                    height: b.height,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: _buildResizeHandles(b),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -1029,4 +1053,44 @@ Row(
       ),
     );
   }
+}
+class _OutlinePainter extends CustomPainter {
+  final double radius;
+  final bool show;
+  final Color color;
+  final double strokeWidth;
+
+  _OutlinePainter({
+    required this.radius,
+    required this.show,
+    required this.color,
+    this.strokeWidth = 2,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (!show) return;
+
+    // İçeri daraltmamak için dıştan çiz: rect'i stroke/2 kadar GENİŞLET
+    final Rect inner = Offset.zero & size;
+    final Rect outer = inner.deflate(-strokeWidth / 2);
+    final RRect rrect = RRect.fromRectAndRadius(
+      outer,
+      Radius.circular(radius + strokeWidth / 2),
+    );
+
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..color = color;
+
+    canvas.drawRRect(rrect, paint);
+  }
+
+  @override
+  bool shouldRepaint(_OutlinePainter old) =>
+      old.radius != radius ||
+      old.show != show ||
+      old.color != color ||
+      old.strokeWidth != strokeWidth;
 }
