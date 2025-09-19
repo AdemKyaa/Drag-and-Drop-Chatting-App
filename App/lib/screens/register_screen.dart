@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:bcrypt/bcrypt.dart'; // 🔒 bcrypt eklendi
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -16,6 +17,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Future<void> register() async {
     try {
+      // Kullanıcı adı boş mu?
+      if (username.trim().isEmpty || password.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("⚠️ Kullanıcı adı ve şifre boş olamaz")),
+        );
+        return;
+      }
+
+      // Kullanıcı adı zaten var mı?
       final existing = await users.where("username", isEqualTo: username).get();
       if (existing.docs.isNotEmpty) {
         // ignore: use_build_context_synchronously
@@ -25,21 +35,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
         return;
       }
 
+      // 🔒 Parolayı bcrypt ile hashle
+      final String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
+
+      // Firestore'a kaydet
       await users.add({
         "username": username,
-        "password": password,
+        "passwordHash": passwordHash, // plain text yerine hash saklanıyor
         "createdAt": FieldValue.serverTimestamp(),
         "isOnline": false,
         "hasNewMessage": false,
       });
 
+      // Başarı mesajı
       // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("✅ Kayıt başarılı, şimdi giriş yapabilirsiniz")),
       );
 
+      // Login sayfasına dön
       // ignore: use_build_context_synchronously
-      Navigator.pop(context); // geri dön → login sayfası
+      Navigator.pop(context);
     } catch (e) {
       // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
@@ -58,15 +74,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
           children: [
             TextField(
               decoration: const InputDecoration(labelText: "Kullanıcı adı"),
-              onChanged: (val) => username = val,
+              onChanged: (val) => username = val.trim(),
             ),
             TextField(
               decoration: const InputDecoration(labelText: "Şifre"),
               obscureText: true,
-              onChanged: (val) => password = val,
+              onChanged: (val) => password = val.trim(),
             ),
             const SizedBox(height: 20),
-            ElevatedButton(onPressed: register, child: const Text("Kayıt Ol")),
+            ElevatedButton(
+              onPressed: register,
+              child: const Text("Kayıt Ol"),
+            ),
           ],
         ),
       ),

@@ -904,155 +904,154 @@ Row(
     });
   }
 
+@override
+Widget build(BuildContext context) {
+  final b = widget.box;
 
-  @override
-  Widget build(BuildContext context) {
-    final b = widget.box;
+  final media = MediaQuery.of(context);
+  final kb = media.viewInsets.bottom;
+  final screen = media.size;
 
-    final media = MediaQuery.of(context);
-    final kb = media.viewInsets.bottom;
-    final screen = media.size;
+  final floatingEdit = widget.isEditing && b.type == "textbox" && kb > 0;
 
-    final floatingEdit = widget.isEditing && b.type == "textbox" && kb > 0;
+  // klavye üstü konum (floatOnEdit true ise)
+  const floatLeft = 16.0;
+  final availableH = screen.height - kb;
+  final upper = availableH - b.height - 8.0;
+  final topForBox = upper < 8.0 ? 8.0 : upper;
 
-    // klavye üstü konum (floatOnEdit true ise)
-    const floatLeft = 16.0;
-    final availableH = screen.height - kb;
-    final upper = availableH - b.height - 8.0;
-    final topForBox = upper < 8.0 ? 8.0 : upper;
+  final showToolbar = widget.inlineToolbar && widget.isEditing && b.type == "textbox";
+  final posLeft = floatingEdit && widget.floatOnEdit ? floatLeft : b.position.dx;
+  final posTop = (floatingEdit && widget.floatOnEdit ? topForBox : b.position.dy) -
+      (showToolbar ? (_toolbarH + 6) : 0.0);
 
-    final showToolbar = widget.inlineToolbar && widget.isEditing && b.type == "textbox";
-    final posLeft = floatingEdit && widget.floatOnEdit ? floatLeft : b.position.dx;
-    final posTop = (floatingEdit && widget.floatOnEdit ? topForBox : b.position.dy) -
-        (showToolbar ? (_toolbarH + 6) : 0.0);
-
-    final double effR = _effectiveRadius(b);
-
-    return Positioned(
-      left: posLeft,
-      top: posTop,
-      child: GestureDetector(
-        behavior: HitTestBehavior.deferToChild,
-        onScaleStart: _onScaleStart,
-        onScaleUpdate: _onScaleUpdate,
-        onScaleEnd: _onScaleEnd,
-        onDoubleTap: () {
-          final b = widget.box;
-          b.isSelected = true;
-          widget.onUpdate();
-          widget.onSelect(false);
-          if (b.type == "image") {
-            _openImageEditPanel();
-          } else {
-            _openTextBoxEditPanel();
-          }
-        },
-        onTap: () {
-          final b = widget.box;
-          final alreadySelected = b.isSelected;
-
-          if (!alreadySelected) {
-            if (b.type == "image") {
-              // image: ilk tıkta handle + outline
-              widget.onSelect(false); // sadece seç
-            } else {
-              // textbox: ilk tık sadece seç
-              widget.onSelect(false);
-            }
+  final double effR = _effectiveRadius(b);
+  return Positioned(
+    left: posLeft,
+    top: posTop,
+    child: Stack(
+      clipBehavior: Clip.none,
+      children: [
+        GestureDetector(
+          behavior: HitTestBehavior.deferToChild,
+          onScaleStart: _onScaleStart,
+          onScaleUpdate: _onScaleUpdate,
+          onScaleEnd: _onScaleEnd,
+          onDoubleTap: () {
+            final b = widget.box;
             b.isSelected = true;
-          } else {
-            if (b.type == "textbox") {
-              // seçiliyken ikinci tık: edit
-              widget.onSelect(true);
-              Future.microtask(() {
-                if (!_focusNode.hasFocus) _focusNode.requestFocus();
-              });
+            widget.onUpdate();
+            widget.onSelect(false);
+            if (b.type == "image") {
+              _openImageEditPanel();
             } else {
-              // image: seçiliyken tekrar tıkla → handle zaten açık kalsın
-              widget.onSelect(true);
+              _openTextBoxEditPanel();
             }
-          }
-        },
-        child: Transform.rotate(
-          angle: (floatingEdit && widget.floatOnEdit) ? 0.0 : b.rotation,
-          child: SizedBox(
-            width: b.width,
-            height: b.height + (showToolbar ? (_toolbarH + 6) : 0),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                if (showToolbar)
+          },
+          onTap: () {
+            final b = widget.box;
+            final alreadySelected = b.isSelected;
+
+            if (!alreadySelected) {
+              if (b.type == "image") {
+                widget.onSelect(false); // sadece seç
+              } else {
+                widget.onSelect(false);
+              }
+              b.isSelected = true;
+            } else {
+              if (b.type == "textbox") {
+                widget.onSelect(true);
+                Future.microtask(() {
+                  if (!_focusNode.hasFocus) _focusNode.requestFocus();
+                });
+              } else {
+                widget.onSelect(true);
+              }
+            }
+          },
+          child: Transform.rotate(
+            angle: (floatingEdit && widget.floatOnEdit) ? 0.0 : b.rotation,
+            child: SizedBox(
+              width: b.width,
+              height: b.height + (showToolbar ? (_toolbarH + 6) : 0),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  if (showToolbar)
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      child: _buildTextInlineToolbar(b),
+                    ),
+
+                  // ana kutu
                   Positioned(
                     left: 0,
-                    top: 0,
-                    child: _buildTextInlineToolbar(b),
-                  ),
-
-                // ana kutu
-                Positioned(
-                  left: 0,
-                  top: (showToolbar ? (_toolbarH + 6) : 0),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(effR),
-                    child: Container(
-                      width: b.width,
-                      height: b.height,
-                      alignment: Alignment.center,
-                      padding: b.type == "textbox"
-                          ? const EdgeInsets.symmetric(horizontal: 12, vertical: 6)
-                          : EdgeInsets.zero,
-                      decoration: BoxDecoration(
-                        // 🔧 borderRadius EKLENDİ → border da yuvarlak olur
-                        borderRadius: BorderRadius.circular(effR),
-                        color: b.type == "image"
-                            ? Colors.transparent
-                            : Color(b.backgroundColor).withAlpha(
-                                (b.backgroundOpacity * 255).clamp(0, 255).round(),
-                              ),
-                      ),
-                      child: _buildContent(b),
-                    ),
-                  ),
-                ),
-
-                if (b.isSelected)
-                Positioned(
-                  left: 0,
-                  top: (showToolbar ? (_toolbarH + 6) : 0),
-                  child: IgnorePointer( // gesture’ları engellemesin
-                    child: CustomPaint(
-                      size: Size(b.width, b.height),
-                      painter: _OutlinePainter(
-                        radius: effR,
-                        show: true,
-                        color: Colors.blueAccent,
-                        strokeWidth: 2,
+                    top: (showToolbar ? (_toolbarH + 6) : 0),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(effR),
+                      child: Container(
+                        width: b.width,
+                        height: b.height,
+                        alignment: Alignment.center,
+                        padding: b.type == "textbox"
+                            ? const EdgeInsets.symmetric(horizontal: 12, vertical: 6)
+                            : EdgeInsets.zero,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(effR),
+                          color: b.type == "image"
+                              ? Colors.transparent
+                              : Color(b.backgroundColor).withAlpha(
+                                  (b.backgroundOpacity * 255).clamp(0, 255).round(),
+                                ),
+                        ),
+                        child: _buildContent(b),
                       ),
                     ),
                   ),
-                ),
 
-                // handle'lar
-                if (b.type == "image" && widget.isEditing)
-                Positioned(
-                  left: 0,
-                  top: (showToolbar ? (_toolbarH + 6) : 0),
-                  child: SizedBox(
-                    width: b.width,
-                    height: b.height,
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: _buildResizeHandles(b),
+                  if (b.isSelected)
+                    Positioned(
+                      left: 0,
+                      top: (showToolbar ? (_toolbarH + 6) : 0),
+                      child: IgnorePointer(
+                        child: CustomPaint(
+                          size: Size(b.width, b.height),
+                          painter: _OutlinePainter(
+                            radius: effR,
+                            show: true,
+                            color: Colors.blueAccent,
+                            strokeWidth: 2,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              ],
+
+                  // handle'lar (sadece resim)
+                  if (b.type == "image" && widget.isEditing)
+                    Positioned(
+                      left: 0,
+                      top: (showToolbar ? (_toolbarH + 6) : 0),
+                      child: SizedBox(
+                        width: b.width,
+                        height: b.height,
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: _buildResizeHandles(b),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ),
-      ),
-    );
-  }
+      ],
+    ),
+  );
+}
+
 }
 class _OutlinePainter extends CustomPainter {
   final double radius;
