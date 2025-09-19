@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../models/box_item.dart';
+import '../../models/box_item.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 
 class ResizableTextBox extends StatefulWidget {
@@ -249,67 +249,6 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
       b.width - _padH * 2,
     );
 
-    List<TextSpan> _buildStyledSpans(BoxItem b) {
-    if (b.text.isEmpty) {
-      return [
-        TextSpan(
-          text: "Metin...",
-          style: TextStyle(color: Colors.grey, fontSize: b.fixedFontSize),
-        )
-      ];
-    }
-
-    // Eğer styles boşsa → tüm metni tek stil ile göster
-    if (b.styles.isEmpty) {
-      return [
-        TextSpan(
-          text: b.text,
-          style: TextStyle(
-            fontSize: b.fixedFontSize,
-            fontFamily: b.fontFamily,
-            fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
-            fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
-            decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
-            color: Color(b.textColor),
-          ),
-        ),
-      ];
-    }
-
-    // Parça parça TextSpan oluştur
-    List<TextSpan> spans = [];
-    int cursor = 0;
-
-    for (var s in b.styles) {
-      if (s.start > cursor) {
-        spans.add(TextSpan(
-          text: b.text.substring(cursor, s.start),
-          style: TextStyle(
-            fontSize: b.fixedFontSize,
-            fontFamily: b.fontFamily,
-            color: Color(b.textColor),
-          ),
-        ));
-      }
-      spans.add(TextSpan(
-        text: b.text.substring(s.start, s.end),
-        style: TextStyle(
-          fontSize: b.fixedFontSize,
-          fontWeight: s.bold ? FontWeight.bold : FontWeight.normal,
-          fontStyle: s.italic ? FontStyle.italic : FontStyle.normal,
-          decoration: s.underline ? TextDecoration.underline : TextDecoration.none,
-          color: Color(b.textColor),
-        ),
-      ));
-      cursor = s.end;
-    }
-
-    if (cursor < b.text.length) {
-      spans.add(TextSpan(text: b.text.substring(cursor)));
-    }
-
-    return spans;
-  }
 
     return Align(
       alignment: Alignment(
@@ -725,9 +664,7 @@ class _ResizableTextBoxState extends State<ResizableTextBox> {
         final b = widget.box;
         double localRadiusFactor = b.borderRadius.clamp(0.0, 0.5);
         double localBgOpacity = b.backgroundOpacity;
-        int localBgColor = b.backgroundColor;
 
-        Color cFrom(int v) => Color(v);
 
         return StatefulBuilder(builder: (_, setSt) {
           return SafeArea(
@@ -767,6 +704,7 @@ Row(
               ),
               TextButton(
                 onPressed: () {
+                  // ignore: deprecated_member_use
                   b.backgroundColor = temp.value;
                   widget.onUpdate();
                   widget.onSave();

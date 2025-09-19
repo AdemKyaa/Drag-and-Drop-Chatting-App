@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../widgets/user_tile.dart';
 import 'chat_screen.dart';
 
 class UserListScreen extends StatelessWidget {
@@ -19,41 +20,25 @@ class UserListScreen extends StatelessWidget {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-
           final docs = snapshot.data!.docs;
-
           return ListView(
-            children: docs.where((u) => u.id != currentUserId).map((user) {
-              final data = user.data() as Map<String, dynamic>;
-              final isOnline = data["isOnline"] == true;
-              final hasNewMessage = data.containsKey("hasNewMessage")
-                  ? data["hasNewMessage"] == true
-                  : false;
-
-              return ListTile(
+            children: docs.map((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              return UserTile(
+                username: data["username"],
+                isOnline: data["isOnline"] ?? false,
                 onTap: () {
-                  // giriş yapan kullanıcının "yeni mesaj" durumunu temizle
-                  users.doc(currentUserId).update({"hasNewMessage": false});
-
                   Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (_) => ChatScreen(
                         currentUserId: currentUserId,
-                        otherUserId: user.id,
+                        otherUserId: doc.id,
                         otherUsername: data["username"],
                       ),
                     ),
                   );
                 },
-                leading: CircleAvatar(
-                  radius: 8,
-                  backgroundColor: isOnline ? Colors.green : Colors.grey,
-                ),
-                title: Text(data["username"] ?? ""),
-                trailing: hasNewMessage
-                    ? const Icon(Icons.circle, color: Colors.red, size: 12)
-                    : null,
               );
             }).toList(),
           );

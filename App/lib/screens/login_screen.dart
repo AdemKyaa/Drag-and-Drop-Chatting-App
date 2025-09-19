@@ -1,6 +1,8 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:bcrypt/bcrypt.dart'; // 🔒 bcrypt
+import 'package:bcrypt/bcrypt.dart';
 import 'user_list_screen.dart';
 import 'register_screen.dart';
 
@@ -19,50 +21,31 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> login() async {
     try {
-      if (username.trim().isEmpty || password.trim().isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("⚠️ Kullanıcı adı ve şifre boş olamaz")),
-        );
-        return;
-      }
-
-      // Kullanıcıyı ada göre bul
       final query = await users.where("username", isEqualTo: username).get();
 
       if (query.docs.isNotEmpty) {
         final userDoc = query.docs.first;
         final data = userDoc.data();
 
-        // Hash alanı var mı kontrol et
-        if (data.containsKey("passwordHash")) {
-          final String storedHash = data["passwordHash"];
+        final storedHash = data["passwordHash"];
+        final valid = BCrypt.checkpw(password, storedHash);
 
-          // 🔒 Şifre kontrolü
-          final bool valid = BCrypt.checkpw(password, storedHash);
+        if (valid) {
+          await users.doc(userDoc.id).update({"isOnline": true});
 
-          if (valid) {
-            // Online durumunu güncelle
-            await users.doc(userDoc.id).update({"isOnline": true});
-
-            // ignore: use_build_context_synchronously
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (_) => UserListScreen(currentUserId: userDoc.id),
-              ),
-            );
-            return;
-          }
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => UserListScreen(currentUserId: userDoc.id),
+            ),
+          );
+          return;
         }
       }
-
-      // Eğer buraya geldiyse giriş başarısız
-      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("❌ Hatalı kullanıcı adı veya şifre")),
       );
     } catch (e) {
-      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("❌ Hata: $e")),
       );
@@ -79,18 +62,15 @@ class _LoginScreenState extends State<LoginScreen> {
           children: [
             TextField(
               decoration: const InputDecoration(labelText: "Kullanıcı adı"),
-              onChanged: (val) => username = val.trim(),
+              onChanged: (val) => username = val,
             ),
             TextField(
               decoration: const InputDecoration(labelText: "Şifre"),
               obscureText: true,
-              onChanged: (val) => password = val.trim(),
+              onChanged: (val) => password = val,
             ),
             const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: login,
-              child: const Text("Giriş Yap"),
-            ),
+            ElevatedButton(onPressed: login, child: const Text("Giriş Yap")),
             TextButton(
               onPressed: () {
                 Navigator.push(

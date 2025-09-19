@@ -1,41 +1,23 @@
+// lib/screens/chat_screen.dart
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:image/image.dart' as img;
-import 'dart:async';
+
 import '../models/box_item.dart';
-import '../widgets/resizable_text_box.dart';
-import 'package:flutter/foundation.dart';
-
-class StyledTextController extends TextEditingController {
-  final BoxItem box;
-  StyledTextController({required this.box, String? text}) : super(text: text ?? box.text);
-
-  @override
-  TextSpan buildTextSpan({
-    required BuildContext context,
-    TextStyle? style,
-    required bool withComposing,
-  }) {
-    if (box.text != text) {
-      box.text = text;
-    }
-    final base = (style ?? const TextStyle());
-    return TextSpan(children: box.styledSpans(base));
-  }
-}
+import '../widgets/object/text_object.dart';
+import '../widgets/object/image_object.dart';
+import '../widgets/delete_area.dart';
 
 class ChatScreen extends StatefulWidget {
   final String currentUserId;
-  final String otherUserId;
-  final String otherUsername;
+  final String? otherUserId;
+  final String? otherUsername;
 
   const ChatScreen({
     super.key,
     required this.currentUserId,
-    required this.otherUserId,
-    required this.otherUsername,
+    this.otherUserId,
+    this.otherUsername,
   });
 
   @override
@@ -43,911 +25,157 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  String? _selectedId;
-  bool _isInteracting = false;
-  final bool _isPanelOpen = false;
-  late final StreamSubscription<QuerySnapshot<Map<String, dynamic>>> _sub;
-
-  final CollectionReference<Map<String, dynamic>> messages =
-      FirebaseFirestore.instance.collection("messages");
-
-  final List<BoxItem> _boxes = [];
-  String? _lastTapId;
-  DateTime? _lastTapTime;
+  final List<BoxItem> boxes = [];
+  bool _editing = false;
+  bool _isOverTrash = false;
   final GlobalKey _trashKey = GlobalKey();
-  final GlobalKey _fontBtnKey = GlobalKey();
-  bool _draggingOverTrash = false;
-  BoxItem? _editingBox;
 
-  // Overlay editör
-  BoxItem? _editingTextBox;
-  final ScrollController _toolbarScroll = ScrollController();
-  final GlobalKey _overlayEditorKey = GlobalKey();
-  final GlobalKey _overlayToolbarKey = GlobalKey();
-  final FocusNode _overlayFocus = FocusNode();
-  StyledTextController? _overlayCtrl;
-
-  int _uiEpoch = 0; // RTB'leri cache-bust etmek için
-
-  String getConversationId() {
-    final ids = [widget.currentUserId, widget.otherUserId]..sort();
-    return ids.join("_");
+  // 🔄 Firestore kaydetme stub’u
+  Future<void> _persistBoxes() async {
+    // Burada Firestore’a boxes listesini kaydedebilirsin.
+    // Şimdilik boş bırakıyorum.
   }
 
-  bool get _isTypingOverlayVisible {
-    return _editingTextBox != null && _editingTextBox!.type == "textbox";
+  // ✅ Çöp alanını ölç
+  bool _pointOverTrash(Offset globalPos) {
+    final ctx = _trashKey.currentContext;
+    final box = ctx?.findRenderObject() as RenderBox?;
+    if (box == null) return false;
+    final pos = box.localToGlobal(Offset.zero);
+    final size = box.size;
+    return globalPos.dx >= pos.dx &&
+        globalPos.dx <= pos.dx + size.width &&
+        globalPos.dy >= pos.dy &&
+        globalPos.dy <= pos.dy + size.height;
   }
 
-  @override
-  void initState() {
-    super.initState();
-
-    _sub = messages
-      .where("conversationId", isEqualTo: getConversationId())
-      .snapshots()
-      .listen((snapshot) {
-        if (!mounted) return;
-
-        setState(() {
-          for (final change in snapshot.docChanges) {
-            final data = change.doc.data();
-            if (data == null) continue;
-            final remote = BoxItem.fromJson(data);
-
-            final idx = _boxes.indexWhere((b) => b.id == remote.id);
-
-            switch (change.type) {
-              case DocumentChangeType.added:
-                if (idx == -1) {
-                  _boxes.add(remote);
-                } else {
-                  // zaten lokalde var → sadece alanları güncelle / seçimi koru
-                  final keepSelected = _boxes[idx].isSelected;
-                  _boxes[idx] = remote;
-                  _boxes[idx].isSelected = keepSelected;
-                }
-                break;
-
-              case DocumentChangeType.modified:
-                if (idx == -1) {
-                  _boxes.add(remote);
-                } else {
-                  // Sürükleme / edit sırasında seçili kutuya gelen remote update'i yok say
-                  final isActiveLocal = (_isInteracting && _selectedId == remote.id);
-                  if (isActiveLocal) {
-                    // ignore remote while interacting
-                  } else {
-                    final keepSelected = _boxes[idx].isSelected;
-                    _boxes[idx] = remote;
-                    _boxes[idx].isSelected = keepSelected;
-                  }
-                }
-                break;
-
-              case DocumentChangeType.removed:
-                if (idx != -1) _boxes.removeAt(idx);
-                break;
-            }
-          }
-
-          _boxes.sort((a, b) => a.z.compareTo(b.z));
-          for (final b in _boxes) {
-            b.isSelected = (b.id == _selectedId);
-          }
-        });
-      });
-  }
-
-  @override
-  void dispose() {
-    _sub.cancel();
-    _overlayFocus.dispose();
-    _overlayCtrl?.dispose();
-    super.dispose();
-  }
-
-  // ==== helpers ====
-  bool _hit(GlobalKey key, Offset gp) {
-    final rb = key.currentContext?.findRenderObject() as RenderBox?;
-    if (rb == null) return false;
-    final p = rb.localToGlobal(Offset.zero);
-    final r = Rect.fromLTWH(p.dx, p.dy, rb.size.width, rb.size.height);
-    return r.contains(gp);
-  }
-
-  double _effectiveRadiusFor(BoxItem b) {
-    final minSide = b.width < b.height ? b.width : b.height;
-    final r = b.borderRadius;
-    final asPx = (r <= 1.0) ? (r * minSide) : r;
-    final maxR = minSide / 2;
-    return asPx.clamp(0, maxR).toDouble();
-  }
-
-  // ===== CRUD =====
-  Future<void> _addBox() async {
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final newBox = BoxItem(
-      id: now.toString(),
-      position: const Offset(150, 150),
-      type: "textbox",
-      text: "",
-      fontSize: 24, // başlangıç için 24
-      width: 120,
-      height: 48,
-      z: now,
-      // metin varsayılanları:
-      align: TextAlign.center,
-      vAlign: 'center',
-      autoFontSize: true,       // auto mod açık
-      fixedFontSize: 24.0,      // auto açıkken değer saklı ama min 24 kuralına uyacağız
-    );
-
+  // ✅ Drop sırasında sil
+  void _handleDrop() {
     setState(() {
-      for (var b in _boxes) {
-        b.isSelected = false;
-      }
-      _overlayCtrl?.dispose();
-      _overlayCtrl = null;
-      newBox.isSelected = true;
-      _boxes.add(newBox);
-      _editingBox = null;
-      _selectedId = newBox.id;
-      _editingTextBox = newBox;
+      boxes.removeWhere((b) => b.isSelected);
     });
-
-    await messages.doc(newBox.id).set({
-      ...newBox.toJson(
-        getConversationId(),
-        widget.currentUserId,
-        widget.otherUserId,
-      ),
-      "createdAt": FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    _persistBoxes();
   }
 
-  Future<Uint8List> _compressToFirestoreLimit(Uint8List data) async {
-    return await compute(compressImageIsolate, data);
-  }
-
-  // chat_screen.dart (importlardan sonra, top-level)
-  Uint8List compressImageIsolate(Uint8List data) {
-    final decoded = img.decodeImage(data);
-    if (decoded == null) return data;
-
-    img.Image resized = decoded;
-    const int maxSide = 1280;
-    final int maxOfWH = decoded.width > decoded.height ? decoded.width : decoded.height;
-    if (maxOfWH > maxSide) {
-      resized = img.copyResize(
-        decoded,
-        width: decoded.width >= decoded.height ? maxSide : null,
-        height: decoded.height > decoded.width ? maxSide : null,
-        interpolation: img.Interpolation.linear,
-      );
-    }
-
-    int quality = 85;
-    Uint8List jpg = Uint8List.fromList(img.encodeJpg(resized, quality: quality));
-    while (jpg.lengthInBytes > 900 * 1024 && quality > 40) {
-      quality -= 10;
-      jpg = Uint8List.fromList(img.encodeJpg(resized, quality: quality));
-    }
-    return jpg;
-  }
-
-  Future<void> _addImageBox() async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
-    if (picked == null) return;
-
-    Uint8List bytes = await picked.readAsBytes();
-
-    // Debug'da istersen sıkıştırmayı atlayalım (pipeline'ı test etmek için):
-    if (!kDebugMode) {
-      try {
-        bytes = await compute(compressImageIsolate, bytes);
-      } catch (e, st) {
-        debugPrint('⚠️ compress failed, continue with original bytes: $e\n$st');
-        // bytes olduğu gibi kalsın
-      }
-    }
-
-    // doğal boyutlar
-    final decoded = img.decodeImage(bytes);
-    double w = 240, h = 180;
-    if (decoded != null) {
-      w = decoded.width.toDouble();
-      h = decoded.height.toDouble();
-      final screen = MediaQuery.of(context).size;
-      final maxW = screen.width * 0.8;
-      final maxH = screen.height * 0.5;
-      final scale = [maxW / w, maxH / h, 1.0].reduce((a, b) => a < b ? a : b);
-      if (scale < 1.0) {
-        w *= scale;
-        h *= scale;
-      }
-    }
-
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final newBox = BoxItem(
-      id: now.toString(),
-      position: const Offset(100, 100),
-      width: w,
-      height: h,
-      type: "image",
-      imageBytes: bytes,
-      z: now,
-    );
-
-    // EKRANDA HEMEN GÖRÜNSÜN
+  // ✅ Textbox ekle
+  void _addTextBox() {
     setState(() {
-      for (var b in _boxes) b.isSelected = false;
-      newBox.isSelected = true;
-      _boxes.add(newBox);
-      _editingBox = null;
-      _selectedId = newBox.id;
+      boxes.add(BoxItem(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        type: "textbox",
+        position: const Offset(100, 100),
+        width: 200,
+        height: 80,
+        text: "",
+        isSelected: true,
+      ));
     });
-
-    // Firestore'a yaz (Blob alan adı "imageBytes" ile aynı)
-    await messages.doc(newBox.id).set({
-      ...newBox.toJson(
-        getConversationId(),
-        widget.currentUserId,
-        widget.otherUserId,
-      ),
-      "createdAt": FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
   }
 
-  Future<void> _removeBox(BoxItem box) async {
+  // ✅ Resim ekle (şimdilik sahte Uint8List ile)
+  void _addImageObject(Uint8List bytes) {
     setState(() {
-      if (_editingBox == box) _editingBox = null;
-      _boxes.remove(box);
-      if (_selectedId == box.id) _selectedId = null;
-    });
-    await messages.doc(box.id).delete();
-  }
-
-  // ChatScreen state alanına ekle:
-  Timer? _debounce;
-
-  // ChatScreen içindeki _updateBox fonksiyonunu değiştir:
-  Future<void> _updateBox(BoxItem box) async {
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 300), () async {
-      await messages.doc(box.id).set({
-        ...box.toJson(
-          getConversationId(),
-          widget.currentUserId,
-          widget.otherUserId,
-        ),
-        "updatedAt": FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      boxes.add(BoxItem(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        type: "image",
+        position: const Offset(150, 150),
+        width: 200,
+        height: 200,
+        imageBytes: bytes,
+        isSelected: true,
+      ));
     });
   }
-
-  bool _isOverTrash(Offset position) {
-    final renderBox = _trashKey.currentContext?.findRenderObject() as RenderBox?;
-    if (renderBox == null) return false;
-    final trashPos = renderBox.localToGlobal(Offset.zero);
-    final trashSize = renderBox.size;
-    final rect = Rect.fromLTWH(trashPos.dx, trashPos.dy, trashSize.width, trashSize.height)
-        .inflate(32.0);
-    return rect.contains(position);
-  }
-
-  void _selectBox(BoxItem box, {bool edit = false}) {
-    setState(() {
-      for (var b in _boxes) {
-        b.isSelected = false;
-      }
-      _editingBox = edit ? box : null;
-      box.z = DateTime.now().millisecondsSinceEpoch;
-    });
-    _updateBox(box);
-  }
-
-  int countLines(String text, TextStyle style, double maxWidth) {
-    final tp = TextPainter(
-      text: TextSpan(text: text, style: style),
-      textDirection: TextDirection.ltr,
-      maxLines: null,
-    )..layout(maxWidth: maxWidth);
-
-    final lines = tp.computeLineMetrics();
-
-    // sadece gerçek satırları say
-    return lines.where((m) => m.width > 0).length;
-  }
-  int countLinesManual(String text) {
-    return text.split('\n').length;
-  }
-
-  // ======================================================
-  // ==============  TEXTBOX ÖLÇÜM / FONT-FIT  ============
-  // ======================================================
-  final Map<String, double> _fontCache = {};
-
-  double _fitFontToConstraint({
-    required String text,
-    required double maxW,
-    required double maxH,
-    required TextStyle base,
-    required int maxLines,
-    required double minFs,
-    required double maxFs,
-  }) {
-    final cacheKey = "$text|$maxW|$maxH|$maxLines";
-    if (_fontCache.containsKey(cacheKey)) {
-      return _fontCache[cacheKey]!;
-    }
-    final String measureText = (text.isEmpty ? ' ' : text);
-
-    bool fits(double fs) {
-      final tp = TextPainter(
-        text: TextSpan(text: measureText, style: base.copyWith(fontSize: fs)),
-        textDirection: TextDirection.ltr,
-        maxLines: maxLines,
-      )..layout(maxWidth: maxW);
-      return tp.size.width <= maxW + 0.5 &&
-             tp.size.height <= maxH + 0.5 &&
-             !tp.didExceedMaxLines;
-    }
-
-    double lo = minFs, hi = maxFs;
-    for (int i = 0; i < 22; i++) {
-      final mid = (lo + hi) / 2;
-      if (fits(mid)) {
-        lo = mid;  // sığıyor, büyüt
-      } else {
-        hi = mid;  // sığmıyor, küçült
-      }
-    }
-    _fontCache[cacheKey] = lo;
-    return lo;
-  }
-
-  // Belirtilen fs ile gerçek boyutu ölç (maxLines & softWrap=false düşüncesiyle)
-  Size _measureText({
-    required String text,
-    required double maxW,
-    required TextStyle style,
-    required int maxLines,
-  }) {
-    final tp = TextPainter(
-      text: TextSpan(text: text.isEmpty ? ' ' : text, style: style),
-      textDirection: TextDirection.ltr,
-      maxLines: maxLines,
-    )..layout(maxWidth: maxW);
-    return tp.size;
-  }
-
-  int _lineCountFromText(String t) => '\n'.allMatches(t).length + 1;
-
-  // Yazma modundan çıkarken textbox’ı kurallara göre ayarla ve kaydet
-  void _saveAndCloseEditor() {
-    final b = _editingTextBox;
-    if (b == null) return;
-
-    const padH = 12.0, padV = 8.0;
-
-    final text = b.text;
-    final hasNewline = text.contains('\n');
-    final maxLines = hasNewline ? 2 : 1;
-
-    // base style (font ailesi/bold/italic/underline vs korunuyor)
-    final base = TextStyle(
-      fontFamily: b.fontFamily,
-      fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
-      fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
-      decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
-      color: Color(b.textColor),
-    );
-
-    // AUTO mu FIXED mi?
-    double minFs, maxFs;
-    if (b.autoFontSize) {
-      minFs = 24.0;
-      maxFs = 24.0;
-    } else {
-      // Fixed: 24..48 arası
-      minFs = 24.0;
-      maxFs = 24.0;
-    }
-
-    const double hugeW = 100000;
-
-    double fs;
-    if (b.autoFontSize) {
-      // min 24, üst sınır 200 — kutu genişleyerek sığdırır.
-      fs = minFs;
-    } else {
-      fs = b.fixedFontSize.clamp(minFs, maxFs);
-    }
-
-    // Gerçek metin boyutunu ölç (tek satır veya 2 satır)
-    final size = _measureText(
-      text: text,
-      maxW: hugeW,
-      style: base.copyWith(fontSize: fs),
-      maxLines: maxLines,
-    );
-
-    // Kutu ölçüleri: metin + padding
-    //final lineNum = countLines(text, base.copyWith(fontSize: fs), 100);
-    final lineNum = countLinesManual(text);
-    final newW = size.width + padH * 2 + 32;
-    final newH = size.height + padV * 2 + ((lineNum - 1) * 32);
-
-    setState(() {
-      b.width = newW;
-      b.height = newH;
-      b.fixedFontSize = fs; // fixed modda slider’dan seçilmiş olabilir, auto’da min 24 zaten
-      b.isSelected = true;  // seçim açık kalsın
-      _selectedId = b.id;
-      _editingTextBox = null;
-      _uiEpoch++;
-    });
-
-    _updateBox(b);
-    FocusScope.of(context).unfocus();
-  }
-
-  // ==== OVERLAY (YAZMA MODU) ====
-  Widget _buildTypingEditor() {
-    final b = _editingTextBox!;
-    final screen = MediaQuery.of(context).size;
-
-    // Yazma modunda kutu ekranı aşmamalı → maxW = ekran - 32
-    final double maxW = screen.width - 32;
-    // Maks 2 satır yüksekliği (24pt * 2 + padding) kadar göstereceğiz
-    const padH = 12.0, padV = 8.0;
-    const double maxLineFs = 24.0;
-    const double oneLineH = (maxLineFs * 1.0 * 1.2); // yaklaşık line-height
-    const double maxContentH = oneLineH * 100; // en fazla 2 satır
-    const double maxH = maxContentH + padV * 2 + 32;
-
-    // controller
-    if (_overlayCtrl == null || _overlayCtrl!.box != b) {
-      _overlayCtrl?.dispose();
-      _overlayCtrl = StyledTextController(box: b, text: b.text);
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_overlayFocus.hasFocus) {
-        _overlayFocus.requestFocus();
-      }
-    });
-
-    final textNow = _overlayCtrl!.text;
-    final hasNewline = textNow.contains('\n');
-    _lineCountFromText(textNow);
-    // Return’a basılmadıkça tek satır; varsa en fazla 2 satır
-    final maxLines = hasNewline ? 2 : 1;
-
-    // Yazma modunda font aralığı 12..24
-    const minFs = 24.0;
-    const maxFs = 24.0;
-
-    final base = TextStyle(
-      fontFamily: b.fontFamily,
-      fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
-      fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
-      decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
-      color: Color(b.textColor),
-    );
-
-    // fontu sığdır:
-    final fs = _fitFontToConstraint(
-      text: textNow,
-      maxW: maxW - padH * 2,
-      maxH: maxH - padV * 2,
-      base: base,
-      maxLines: maxLines,
-      minFs: minFs,
-      maxFs: maxFs,
-    );
-
-    // gerçek ölçüm:
-    final measured = _measureText(
-      text: textNow,
-      maxW: maxW - padH * 2,
-      style: base.copyWith(fontSize: fs),
-      maxLines: maxLines,
-    );
-
-    //final lineNum = countLines(textNow, base.copyWith(fontSize: fs), 100);
-    final lineNum = countLinesManual(textNow);
-    final boxW = (measured.width + padH * 2 + 32);
-    final boxH = (measured.height + padV * 2 + ((lineNum - 1) * 32));
-
-    return Container(
-      key: _overlayEditorKey,
-      width: boxW,
-      height: boxH,
-      padding: const EdgeInsets.symmetric(horizontal: padH, vertical: padV),
-      decoration: BoxDecoration(
-        color: Color(b.backgroundColor),
-        borderRadius: BorderRadius.circular(_effectiveRadiusFor(b)),
-      ),
-      child: TextField(
-        controller: _overlayCtrl,
-        focusNode: _overlayFocus,
-        autofocus: true,
-        keyboardType: TextInputType.multiline,
-        textInputAction: TextInputAction.newline,
-        maxLines: null,
-        minLines: 1,
-        textAlign: b.align,
-        textAlignVertical: TextAlignVertical.center,
-        decoration: const InputDecoration(
-          border: InputBorder.none,
-          isCollapsed: true,
-          contentPadding: EdgeInsets.zero,
-        ),
-        // ÖNEMLİ: base stil (font ailesi, renk) + hesaplanan fs
-        style: TextStyle(
-          fontSize: fs,
-          fontFamily: b.fontFamily,
-          color: Color(b.textColor),
-        ),
-        onChanged: (v) {
-          b.text = v;
-
-          final hasNL = v.contains('\n');
-          final mLines = hasNL ? 2 : 1;
-
-          final fitFs = _fitFontToConstraint(
-            text: v,
-            maxW: maxW - padH * 2,
-            maxH: maxH - padV * 2,
-            base: base,
-            maxLines: mLines,
-            minFs: minFs,
-            maxFs: maxFs,
-          );
-
-          final s = _measureText(
-            text: v,
-            maxW: maxW - padH * 2,
-            style: base.copyWith(fontSize: fitFs),
-            maxLines: mLines,
-          );
-
-          setState(() {
-            b.width = s.width + padH * 2;
-            b.height = s.height + padV * 2;
-            b.fixedFontSize = fitFs;
-          });
-        },
-        onEditingComplete: _saveAndCloseEditor,
-      ),
-    );
-  }
-
-  // ==== üstteki toolbar ====
-
-  Widget _buildFixedTextToolbar(BoxItem b) {
-    final screen = MediaQuery.of(context).size;
-    return Material(
-      key: _overlayToolbarKey,
-      elevation: 6,
-      color: Colors.white,
-      child: SizedBox(
-        height: 48,
-        width: screen.width,
-        child: SingleChildScrollView(
-          controller: _toolbarScroll,
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () {},
-            child: Row(
-              children: [
-                IconButton(
-                  icon: Icon(Icons.format_bold, size: 20, color: b.bold ? Colors.teal : null),
-                  onPressed: () {
-                    final sel = _overlayCtrl?.selection;
-                    if (sel != null && sel.start != sel.end) {
-                      // sadece seçili aralığa uygula
-                      b.styles.add(TextRangeStyle(
-                        start: sel.start,
-                        end: sel.end,
-                        bold: true, // italic / underline da benzer
-                      ));
-                    } else {
-                      // tüm metne uygula (eski davranış)
-                      b.bold = !b.bold;
-                    }
-                    setState(() {});
-                    _updateBox(b);
-                  },
-                ),
-                IconButton(
-                  icon: Icon(Icons.format_italic, size: 20, color: b.italic ? Colors.teal : null),
-                  onPressed: () {
-                    final sel = _overlayCtrl?.selection;
-                    if (sel != null && sel.start != sel.end) {
-                      b.styles.add(TextRangeStyle(
-                        start: sel.start,
-                        end: sel.end,
-                        italic: true,
-                      ));
-                    } else {
-                      b.italic = !b.italic;
-                    }
-                    setState(() {});
-                    _updateBox(b);
-                  },
-                ),
-                IconButton(
-                  icon: Icon(Icons.format_underline, size: 20, color: b.underline ? Colors.teal : null),
-                  onPressed: () {
-                    final sel = _overlayCtrl?.selection;
-                    if (sel != null && sel.start != sel.end) {
-                      b.styles.add(TextRangeStyle(
-                        start: sel.start,
-                        end: sel.end,
-                        underline: true,
-                      ));
-                    } else {
-                      b.underline = !b.underline;
-                    }
-                    setState(() {});
-                    _updateBox(b);
-                  },
-                ),
-                const VerticalDivider(width: 12),
-                IconButton(
-                  icon: const Icon(Icons.format_align_left, size: 20),
-                  onPressed: () {
-                    setState(() => b.align = TextAlign.left);
-                    _updateBox(b);
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.format_align_center, size: 20),
-                  onPressed: () {
-                    setState(() => b.align = TextAlign.center);
-                    _updateBox(b);
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.format_align_right, size: 20),
-                  onPressed: () {
-                    setState(() => b.align = TextAlign.right);
-                    _updateBox(b);
-                  },
-                ),
-                const VerticalDivider(width: 12),
-                InkWell(
-                  key: _fontBtnKey,
-                  onTap: () async {
-                    final ctx = _fontBtnKey.currentContext;
-                    if (ctx == null) return;
-                    final rb = ctx.findRenderObject() as RenderBox;
-                    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-                    final btn = rb.localToGlobal(Offset.zero, ancestor: overlay);
-                    final pos = RelativeRect.fromLTRB(
-                      btn.dx,
-                      btn.dy - 220,
-                      overlay.size.width - (btn.dx + rb.size.width),
-                      overlay.size.height - btn.dy,
-                    );
-
-                    final pick = await showMenu<String>(
-                      context: context,
-                      position: pos,
-                      items: const [
-                        PopupMenuItem(value: "Roboto", child: Text("Roboto")),
-                        PopupMenuItem(value: "Arial", child: Text("Arial")),
-                        PopupMenuItem(value: "Times New Roman", child: Text("Times New Roman")),
-                        PopupMenuItem(value: "Courier New", child: Text("Courier New")),
-                      ],
-                    );
-                    if (pick != null) {
-                      setState(() => _editingTextBox!.fontFamily = pick);
-                      _updateBox(_editingTextBox!);
-                    }
-                  },
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8),
-                    child: Icon(Icons.font_download, size: 20),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  bool _tapInsideAnyBox = false;
 
   @override
   Widget build(BuildContext context) {
-    final boxesSorted = [..._boxes]..sort((a, b) => a.z.compareTo(b.z));
-
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.otherUsername),
+        title: Text(widget.otherUsername ?? "Chat"),
         actions: [
-          IconButton(icon: const Icon(Icons.add_box), onPressed: _addBox),
-          IconButton(icon: const Icon(Icons.image), onPressed: _addImageBox),
+          IconButton(
+            icon: const Icon(Icons.text_fields),
+            onPressed: _addTextBox,
+          ),
+          IconButton(
+            icon: const Icon(Icons.image),
+            onPressed: () {
+              // burada image_picker veya file_picker entegre edebilirsin
+              // şimdilik sahte boş byte gönderiyorum:
+              _addImageObject(Uint8List(0));
+            },
+          ),
+          IconButton(
+            icon: Icon(_editing ? Icons.done : Icons.edit),
+            onPressed: () {
+              setState(() => _editing = !_editing);
+            },
+          ),
         ],
       ),
-      body: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onTapDown: (d) {
-          // (mevcut overlay kapatma kodun kalsın)
-          if (_isTypingOverlayVisible) {
-            final gp = d.globalPosition;
-            if (_hit(_overlayToolbarKey, gp) || _hit(_overlayEditorKey, gp)) return;
-            _saveAndCloseEditor();
-          }
-
-          // ⬇️ burada "tık bir kutunun içindeyse" işaretle
-          final p = d.localPosition;
-          _tapInsideAnyBox = boxesSorted.any((b) {
-            final rect = Rect.fromLTWH(b.position.dx, b.position.dy, b.width, b.height);
-            return rect.contains(p); // rotasyonu kabaca bbox ile es geçiyoruz
-          });
-        },
-        onTap: () {
-          // ⬇️ kutu üstüne tıklandıysa seçimi TEMİZLEME
-          if (_tapInsideAnyBox) { _tapInsideAnyBox = false; return; }
-
-          if (_isPanelOpen) return;
-          if (_editingTextBox != null) return;
-          if (_isTypingOverlayVisible) return;
-          FocusScope.of(context).unfocus();
-          setState(() {
-            for (var b in boxesSorted) { b.isSelected = false; }
-            _editingBox = null;
-            _selectedId = null;
-          });
-        },
-        child: Stack(
-          children: [
-            // Canvas
-            ...boxesSorted.map((box) {
-              return AnimatedBuilder(
-                animation: box,
-                builder: (context, _) {
-                  return ResizableTextBox(
-                    key: ValueKey('${box.id}#$_uiEpoch'),
-                    box: box,
-                    isEditing: _editingBox == box,
-                    onUpdate: () => setState(() {}),
-                    onSave: () => _updateBox(box),
-
-                    onSelect: (edit) {
-                      setState(() {
-                        // önce herkesin seçimini kaldır
-                        for (final other in _boxes) {
-                          other.isSelected = false;
-                        }
-                        // sadece bu kutu seçili
-                        box.isSelected = true;
-                        _selectedId = box.id;
-
-                        if (edit) {
-                          if (box.type == "textbox") {
-                            // Text yazım overlay'i
-                            _editingBox = null;        // image handle modu kapalı
-                            if (_overlayCtrl == null) {
-                              _overlayCtrl = StyledTextController(box: box, text: box.text);
-                            } else {
-                              _overlayCtrl!.text = box.text;
-                            }
-                            _overlayCtrl!.selection =
-                                TextSelection.collapsed(offset: _overlayCtrl!.text.length);
-                            _editingTextBox = box;     // overlay açılır
-                          } else {
-                            // Image → resize handle'ları göstermek için isEditing=true
-                            _editingTextBox = null;    // overlay yok
-                            _editingBox = box;         // bu widget için isEditing=true olur
-                          }
-                        } else {
-                          // sadece seç (edit/handle açık değil)
-                          _editingTextBox = null;
-                          _editingBox = null;
-                        }
-                      });
-
-                      _updateBox(box);
-                    },
-
-                    onDeselect: () {
-                      setState(() {
-                        box.isSelected = false;
-                        if (_selectedId == box.id) _selectedId = null;
-                      });
-                      _updateBox(box);
-                    },
-
-                    onDelete: () => _removeBox(box),
-                    isOverTrash: _isOverTrash,
-                    onDraggingOverTrash: (isOver) => setState(() => _draggingOverTrash = isOver),
-
-                    onInteract: (active) {
-                      // sürükleme/resize sırasında remote güncellemesini yok saymamız için bu önemli
-                      setState(() => _isInteracting = active);
-                    },
-
-                    onTextFocusChange: (hasFocus, bx) {
-                      setState(() {
-                        _editingBox = hasFocus ? bx : null;
-                        _editingTextBox = hasFocus ? bx : null;
-                        if (!hasFocus) {
-                          _selectedId = null;
-                          for (final b in _boxes) {
-                            b.isSelected = false;
-                          }
-                        }
-                      });
-                      if (!hasFocus) _updateBox(bx);
-                    },
-
-                    inlineToolbar: false,
-                    floatOnEdit: false,
-                    useExternalEditor: true,
-                  );
+      body: Stack(
+        children: [
+          // objeler
+          ...boxes.map((b) {
+            if (b.type == "textbox") {
+              return TextObject(
+                box: b,
+                isEditing: _editing,
+                onUpdate: () => setState(() {}),
+                onSave: _persistBoxes,
+                onSelect: (edit) {
+                  setState(() {
+                    for (var other in boxes) {
+                      other.isSelected = false;
+                    }
+                    b.isSelected = true;
+                  });
                 },
+                onDelete: () {
+                  setState(() => boxes.remove(b));
+                  _persistBoxes();
+                },
+                isOverTrash: _pointOverTrash,
+                onDraggingOverTrash: (v) => setState(() => _isOverTrash = v),
+                onInteract: (_) {},
               );
-            }),
+            } else if (b.type == "image") {
+              return ImageObject(
+                box: b,
+                isEditing: _editing,
+                onUpdate: () => setState(() {}),
+                onSave: _persistBoxes,
+                onSelect: (edit) {
+                  setState(() {
+                    for (var other in boxes) {
+                      other.isSelected = false;
+                    }
+                    b.isSelected = true;
+                  });
+                },
+                onDelete: () {
+                  setState(() => boxes.remove(b));
+                  _persistBoxes();
+                },
+                isOverTrash: _pointOverTrash,
+                onDraggingOverTrash: (v) => setState(() => _isOverTrash = v),
+                onInteract: (_) {},
+              );
+            }
+            return const SizedBox.shrink();
+          }).toList(),
 
-            // === Yazma Overlay + Toolbar ===
-            if (_isTypingOverlayVisible) ...[
-              Positioned.fill(
-                child: GestureDetector(
-                  onTap: _saveAndCloseEditor,
-                  // ignore: deprecated_member_use
-                  child: Container(color: Colors.black.withOpacity(0.8)),
-                ),
-              ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: SafeArea(
-                  top: false,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 0),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: Center(child: _buildTypingEditor()),
-                        ),
-                        if (_editingTextBox != null) _buildFixedTextToolbar(_editingTextBox!),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-
-            // Çöp alanı
-            if (_isInteracting && !_isTypingOverlayVisible)
-              Align(
-                alignment: Alignment.bottomCenter,
-                child: Container(
-                  key: _trashKey,
-                  height: 100,
-                  color: _draggingOverTrash
-                      // ignore: deprecated_member_use
-                      ? Colors.red.withOpacity(0.5)
-                      // ignore: deprecated_member_use
-                      : Colors.red.withOpacity(0.2),
-                  child: const Center(
-                    child: Icon(Icons.delete, size: 40, color: Colors.red),
-                  ),
-                ),
-              ),
-          ],
-        ),
+          // çöp alanı
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: DeleteArea(
+              key: _trashKey,
+              isActive: _isOverTrash,
+              onOverChange: (v) => setState(() => _isOverTrash = v),
+              onDrop: _handleDrop,
+            ),
+          ),
+        ],
       ),
     );
   }
