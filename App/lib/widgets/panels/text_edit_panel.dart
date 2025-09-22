@@ -6,8 +6,7 @@ class TextEditPanel extends StatefulWidget {
   final BoxItem box;
   final VoidCallback onUpdate;
   final VoidCallback onSave;
-  int colorToInt(Color c) => (c.alpha << 24) | (c.red << 16) | (c.green << 8) | c.blue;
-  
+
   const TextEditPanel({
     super.key,
     required this.box,
@@ -34,6 +33,42 @@ class _TextEditPanelState extends State<TextEditPanel> {
     localTextColor = widget.box.textColor;
   }
 
+  Future<void> _pickColor({
+    required String title,
+    required Color current,
+    required void Function(Color c) onSelected,
+  }) async {
+    Color temp = current;
+    await showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(title),
+        content: SingleChildScrollView(
+          child: ColorPicker(
+            pickerColor: temp,
+            onColorChanged: (c) => temp = c,
+            paletteType: PaletteType.hsvWithHue,
+            enableAlpha: false,
+            displayThumbColor: true,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("İptal"),
+          ),
+          TextButton(
+            onPressed: () {
+              onSelected(temp);
+              Navigator.pop(context);
+            },
+            child: const Text("Seç"),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final b = widget.box;
@@ -43,6 +78,7 @@ class _TextEditPanelState extends State<TextEditPanel> {
         padding: const EdgeInsets.all(12),
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
               "Metin Ayarları",
@@ -59,39 +95,17 @@ class _TextEditPanelState extends State<TextEditPanel> {
                   icon: const Icon(Icons.color_lens),
                   label: const Text("Seç"),
                   onPressed: () async {
-                    Color temp = Color(localBgColor);
-                    await showDialog(
-                      context: context,
-                      builder: (_) => AlertDialog(
-                        title: const Text("Arka Plan Rengi"),
-                        content: SingleChildScrollView(
-                          child: ColorPicker(
-                            pickerColor: temp,
-                            onColorChanged: (c) => temp = c,
-                            paletteType: PaletteType.hsvWithHue,
-                            enableAlpha: false,
-                            displayThumbColor: true,
-                          ),
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text("İptal"),
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              setState(() {
-                                localBgColor = temp.value;
-                                b.backgroundColor = localBgColor;
-                              });
-                              widget.onUpdate();
-                              widget.onSave();
-                              Navigator.pop(context);
-                            },
-                            child: const Text("Seç"),
-                          ),
-                        ],
-                      ),
+                    await _pickColor(
+                      title: "Arka Plan Rengi",
+                      current: Color(localBgColor),
+                      onSelected: (c) {
+                        setState(() {
+                          localBgColor = c.value;
+                          b.backgroundColor = localBgColor;
+                        });
+                        widget.onUpdate();
+                        widget.onSave();
+                      },
                     );
                   },
                 ),
@@ -147,84 +161,21 @@ class _TextEditPanelState extends State<TextEditPanel> {
                   icon: const Icon(Icons.color_lens),
                   label: const Text("Seç"),
                   onPressed: () async {
-                    Color temp = Color(localTextColor);
-                    await showDialog(
-                      context: context,
-                      builder: (_) => AlertDialog(
-                        title: const Text("Metin Rengi"),
-                        content: SingleChildScrollView(
-                          child: ColorPicker(
-                            pickerColor: temp,
-                            onColorChanged: (c) => temp = c,
-                            paletteType: PaletteType.hsvWithHue,
-                            enableAlpha: false,
-                            displayThumbColor: true,
-                          ),
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text("İptal"),
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              setState(() {
-                                localTextColor = temp.value;
-                                b.textColor = localTextColor;
-                              });
-                              widget.onUpdate();
-                              widget.onSave();
-                              Navigator.pop(context);
-                            },
-                            child: const Text("Seç"),
-                          ),
-                        ],
-                      ),
+                    await _pickColor(
+                      title: "Metin Rengi",
+                      current: Color(localTextColor),
+                      onSelected: (c) {
+                        setState(() {
+                          localTextColor = c.value;
+                          b.textColor = localTextColor;
+                        });
+                        widget.onUpdate();
+                        widget.onSave();
+                      },
                     );
                   },
                 ),
               ],
-            ),
-
-            // 🔹 Hizalama Butonları
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.format_align_left),
-                  onPressed: () {
-                    b.align = TextAlign.left;
-                    widget.onUpdate();
-                    widget.onSave();
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.format_align_center),
-                  onPressed: () {
-                    b.align = TextAlign.center;
-                    widget.onUpdate();
-                    widget.onSave();
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.format_align_right),
-                  onPressed: () {
-                    b.align = TextAlign.right;
-                    widget.onUpdate();
-                    widget.onSave();
-                  },
-                ),
-              ],
-            ),
-
-            // 🔹 Kapat
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                child: const Text("Kapat"),
-                onPressed: () => Navigator.pop(context),
-              ),
             ),
           ],
         ),

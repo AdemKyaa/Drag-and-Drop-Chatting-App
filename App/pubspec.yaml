@@ -31,6 +31,8 @@ dependencies:
   image: ^4.2.0
   flutter_colorpicker: ^1.0.3
 
+  google_fonts: ^6.2.1
+
   # UI için ekstra paketler (opsiyonel)
   cupertino_icons: ^1.0.8
 

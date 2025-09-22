@@ -14,16 +14,16 @@ class DeleteArea extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final base = Colors.red;
+    const base = Colors.red;
     final bg = base.withAlpha((isActive ? 0.15 : 0.08) * 255 ~/ 1); // ✅ withOpacity yerine withAlpha
 
     return DragTarget<Object>(
-      onWillAccept: (_) {
+      onWillAcceptWithDetails: (_) {
         onOverChange?.call(true);
         return true;
       },
       onLeave: (_) => onOverChange?.call(false),
-      onAccept: (_) {                       // DragTarget’ın kendi onAccept’i
+      onAcceptWithDetails: (_) {                       // DragTarget’ın kendi onAccept’i
         onOverChange?.call(false);
         onDrop?.call();
       },

@@ -7,6 +7,7 @@ class TextStyleSpan {
   bool bold;
   bool italic;
   bool underline;
+  String fontFamily; // 🔹 eklendi
 
   TextStyleSpan({
     required this.start,
@@ -14,7 +15,26 @@ class TextStyleSpan {
     this.bold = false,
     this.italic = false,
     this.underline = false,
+    this.fontFamily = "Roboto", // 🔹 varsayılan font
   });
+
+  TextStyleSpan copyWith({
+    int? start,
+    int? end,
+    bool? bold,
+    bool? italic,
+    bool? underline,
+    String? fontFamily,
+  }) {
+    return TextStyleSpan(
+      start: start ?? this.start,
+      end: end ?? this.end,
+      bold: bold ?? this.bold,
+      italic: italic ?? this.italic,
+      underline: underline ?? this.underline,
+      fontFamily: fontFamily ?? this.fontFamily,
+    );
+  }
 }
 
 class BoxItem {
@@ -60,7 +80,7 @@ class BoxItem {
     this.isSelected = false,
     this.text = "",
     this.fixedFontSize = 16,
-    this.fontFamily = "Arial",
+    this.fontFamily = "Roboto", // 🔹 Arial yerine Roboto
     this.bold = false,
     this.italic = false,
     this.underline = false,
@@ -85,7 +105,18 @@ class BoxItem {
     }
 
     if (styles.isEmpty) {
-      return [TextSpan(text: text, style: base.copyWith(color: Color(textColor)))];
+      return [
+        TextSpan(
+          text: text,
+          style: base.copyWith(
+            fontFamily: fontFamily,
+            color: Color(textColor),
+            fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+            fontStyle: italic ? FontStyle.italic : FontStyle.normal,
+            decoration: underline ? TextDecoration.underline : TextDecoration.none,
+          ),
+        ),
+      ];
     }
 
     List<TextSpan> spans = [];
@@ -95,12 +126,16 @@ class BoxItem {
       if (s.start > cursor) {
         spans.add(TextSpan(
           text: text.substring(cursor, s.start),
-          style: base.copyWith(color: Color(textColor)),
+          style: base.copyWith(
+            fontFamily: fontFamily,
+            color: Color(textColor),
+          ),
         ));
       }
       spans.add(TextSpan(
         text: text.substring(s.start, s.end),
         style: base.copyWith(
+          fontFamily: s.fontFamily.isNotEmpty ? s.fontFamily : fontFamily,
           fontWeight: s.bold ? FontWeight.bold : FontWeight.normal,
           fontStyle: s.italic ? FontStyle.italic : FontStyle.normal,
           decoration: s.underline ? TextDecoration.underline : TextDecoration.none,
@@ -113,7 +148,10 @@ class BoxItem {
     if (cursor < text.length) {
       spans.add(TextSpan(
         text: text.substring(cursor),
-        style: base.copyWith(color: Color(textColor)),
+        style: base.copyWith(
+          fontFamily: fontFamily,
+          color: Color(textColor),
+        ),
       ));
     }
 

@@ -1,12 +1,14 @@
 // lib/screens/chat_screen.dart
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../models/box_item.dart';
 import '../widgets/object/text_object.dart';
 import '../widgets/object/image_object.dart';
 import '../widgets/delete_area.dart';
+import '../widgets/panels/toolbar_panel.dart';
+import '../widgets/panels/image_edit_panel.dart';
 
 class ChatScreen extends StatefulWidget {
   final String currentUserId;
@@ -26,14 +28,14 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final List<BoxItem> boxes = [];
-  bool _editing = false;
   bool _isOverTrash = false;
   final GlobalKey _trashKey = GlobalKey();
+
+  BoxItem? _editingBox; // şu an düzenlenen kutu
 
   // 🔄 Firestore kaydetme stub’u
   Future<void> _persistBoxes() async {
     // Burada Firestore’a boxes listesini kaydedebilirsin.
-    // Şimdilik boş bırakıyorum.
   }
 
   // ✅ Çöp alanını ölç
@@ -60,31 +62,39 @@ class _ChatScreenState extends State<ChatScreen> {
   // ✅ Textbox ekle
   void _addTextBox() {
     setState(() {
-      boxes.add(BoxItem(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        type: "textbox",
-        position: const Offset(100, 100),
-        width: 200,
-        height: 80,
-        text: "",
-        isSelected: true,
-      ));
+    final box = BoxItem(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      type: "textbox",
+      position: const Offset(100, 100),
+      width: 200,
+      height: 80,
+      text: "",
+      fontFamily: "Roboto", // 🔥 Arial yerine Roboto
+      isSelected: true,
+    );
+      boxes.add(box);
+      _editingBox = box; // eklenir eklenmez düzenleme moduna geç
     });
   }
 
-  // ✅ Resim ekle (şimdilik sahte Uint8List ile)
-  void _addImageObject(Uint8List bytes) {
-    setState(() {
-      boxes.add(BoxItem(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        type: "image",
-        position: const Offset(150, 150),
-        width: 200,
-        height: 200,
-        imageBytes: bytes,
-        isSelected: true,
-      ));
-    });
+  // ✅ Resim ekle (galeriden)
+  Future<void> _pickImage() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery);
+    if (picked != null) {
+      final bytes = await picked.readAsBytes();
+      setState(() {
+        boxes.add(BoxItem(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          type: "image",
+          position: const Offset(150, 150),
+          width: 200,
+          height: 200,
+          imageBytes: bytes,
+          isSelected: true,
+        ));
+      });
+    }
   }
 
   @override
@@ -99,17 +109,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.image),
-            onPressed: () {
-              // burada image_picker veya file_picker entegre edebilirsin
-              // şimdilik sahte boş byte gönderiyorum:
-              _addImageObject(Uint8List(0));
-            },
-          ),
-          IconButton(
-            icon: Icon(_editing ? Icons.done : Icons.edit),
-            onPressed: () {
-              setState(() => _editing = !_editing);
-            },
+            onPressed: _pickImage,
           ),
         ],
       ),
@@ -120,50 +120,71 @@ class _ChatScreenState extends State<ChatScreen> {
             if (b.type == "textbox") {
               return TextObject(
                 box: b,
-                isEditing: _editing,
+                isEditing: _editingBox == b, // sadece seçilen kutu editlenir
                 onUpdate: () => setState(() {}),
-                onSave: _persistBoxes,
+                onSave: () {
+                  setState(() => _editingBox = null);
+                  _persistBoxes();
+                },
                 onSelect: (edit) {
                   setState(() {
                     for (var other in boxes) {
                       other.isSelected = false;
                     }
                     b.isSelected = true;
+                    if (edit) {
+                      _editingBox = b;
+                    }
                   });
                 },
                 onDelete: () {
-                  setState(() => boxes.remove(b));
+                  setState(() {
+                    boxes.remove(b);
+                    if (_editingBox == b) _editingBox = null;
+                  });
                   _persistBoxes();
                 },
                 isOverTrash: _pointOverTrash,
                 onDraggingOverTrash: (v) => setState(() => _isOverTrash = v),
-                onInteract: (_) {},
+                onInteract: (v) {},
               );
             } else if (b.type == "image") {
-              return ImageObject(
-                box: b,
-                isEditing: _editing,
-                onUpdate: () => setState(() {}),
-                onSave: _persistBoxes,
-                onSelect: (edit) {
-                  setState(() {
-                    for (var other in boxes) {
-                      other.isSelected = false;
-                    }
-                    b.isSelected = true;
-                  });
+              return GestureDetector(
+                onDoubleTap: () async {
+                  await showModalBottomSheet(
+                    context: context,
+                    builder: (_) => ImageEditPanel(
+                      box: b,
+                      onUpdate: () => setState(() {}),
+                      onSave: _persistBoxes,
+                    ),
+                  );
                 },
-                onDelete: () {
-                  setState(() => boxes.remove(b));
-                  _persistBoxes();
-                },
-                isOverTrash: _pointOverTrash,
-                onDraggingOverTrash: (v) => setState(() => _isOverTrash = v),
-                onInteract: (_) {},
+                child: ImageObject(
+                  box: b,
+                  isEditing: false,
+                  onUpdate: () => setState(() {}),
+                  onSave: _persistBoxes,
+                  onSelect: (edit) {
+                    setState(() {
+                      for (var other in boxes) {
+                        other.isSelected = false;
+                      }
+                      b.isSelected = true;
+                    });
+                  },
+                  onDelete: () {
+                    setState(() => boxes.remove(b));
+                    _persistBoxes();
+                  },
+                  isOverTrash: _pointOverTrash,
+                  onDraggingOverTrash: (v) => setState(() => _isOverTrash = v),
+                  onInteract: (_) {},
+                ),
               );
             }
             return const SizedBox.shrink();
-          }).toList(),
+          }),
 
           // çöp alanı
           Align(
@@ -175,6 +196,17 @@ class _ChatScreenState extends State<ChatScreen> {
               onDrop: _handleDrop,
             ),
           ),
+
+          // ==== Düzenleme Modu (textbox için) ====
+          if (_editingBox != null && _editingBox!.type == "textbox")
+            ToolbarPanel(
+              box: _editingBox!,
+              onUpdate: () => setState(() {}),
+              onSave: _persistBoxes,
+              onClose: () {
+                setState(() => _editingBox = null);
+              },
+            ),
         ],
       ),
     );

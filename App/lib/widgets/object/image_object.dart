@@ -1,16 +1,29 @@
+// lib/widgets/object/image_object.dart
 import 'package:flutter/material.dart';
 import '../../models/box_item.dart';
 
 class ImageObject extends StatefulWidget {
   final BoxItem box;
+  final bool isEditing;
   final VoidCallback onUpdate;
+  final VoidCallback onSave;
+  final void Function(bool edit) onSelect;
   final VoidCallback onDelete;
+  final bool Function(Offset) isOverTrash;
+  final void Function(bool)? onDraggingOverTrash;
+  final void Function(bool)? onInteract;
 
   const ImageObject({
     super.key,
     required this.box,
+    required this.isEditing,
     required this.onUpdate,
+    required this.onSave,
+    required this.onSelect,
     required this.onDelete,
+    required this.isOverTrash,
+    this.onDraggingOverTrash,
+    this.onInteract,
   });
 
   @override
@@ -38,6 +51,10 @@ class _ImageObjectState extends State<ImageObject> {
       top: b.position.dy,
       child: GestureDetector(
         onScaleUpdate: _onScaleUpdate,
+        onTap: () {
+          widget.onSelect(true);
+        },
+        onDoubleTap: () => widget.onDelete(),
         child: Transform.rotate(
           angle: b.rotation,
           child: Container(

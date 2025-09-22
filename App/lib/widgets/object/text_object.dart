@@ -1,4 +1,4 @@
-import 'dart:async';
+// lib/widgets/object/text_object.dart
 import 'package:flutter/material.dart';
 import '../../models/box_item.dart';
 import '../panels/text_edit_panel.dart';
@@ -12,7 +12,7 @@ class TextObject extends StatefulWidget {
   final VoidCallback onDelete;
   final bool Function(Offset) isOverTrash;
   final void Function(bool)? onDraggingOverTrash;
-  final void Function(bool active)? onInteract;
+  final void Function(bool)? onInteract;
 
   const TextObject({
     super.key,
@@ -37,36 +37,11 @@ class _TextObjectState extends State<TextObject> {
   static const double _toolbarH = 48;
 
   int _overTrashFrames = 0;
-  late TextEditingController _controller;
-  final FocusNode _focusNode = FocusNode();
-
   Offset? _lastGlobalPoint;
   late double _startW;
   late double _startH;
   late double _startRot;
   late double _startFontSize;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.box.text);
-
-    _focusNode.addListener(() {
-      if (_focusNode.hasFocus) {
-        widget.onInteract?.call(true);
-      } else {
-        widget.onSave();
-        widget.onInteract?.call(false);
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _focusNode.dispose();
-    _controller.dispose();
-    super.dispose();
-  }
 
   // ==== gesture ====
   void _onScaleStart(ScaleStartDetails d) {
@@ -125,55 +100,63 @@ class _TextObjectState extends State<TextObject> {
 
   // ==== content ====
   Widget _buildContent(BoxItem b) {
-    final editHere = widget.isEditing;
+    // Metin her render edildiğinde boyutu güncelle
+    _recalcBoxSize(b);
 
-    if (editHere) {
-      return TextField(
-        controller: _controller,
-        focusNode: _focusNode,
-        autofocus: true,
-        keyboardType: TextInputType.multiline,
-        textInputAction: TextInputAction.newline,
-        maxLines: null,
-        minLines: 1,
-        expands: false,
-        textAlign: b.align,
-        decoration: const InputDecoration(
-          border: InputBorder.none,
-          hintText: "Metin...",
-          isCollapsed: true,
-          contentPadding: EdgeInsets.zero,
-        ),
+    return RichText(
+      textAlign: b.align,
+      text: TextSpan(
         style: TextStyle(
           fontSize: b.fixedFontSize,
-          fontFamily: b.fontFamily,
+          fontFamily: b.fontFamily.isEmpty ? "Roboto" : b.fontFamily,
           fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
           fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
           decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
           color: Color(b.textColor),
         ),
-        onChanged: (val) {
-          b.text = val;
-          widget.onUpdate();
-        },
-        onSubmitted: (_) => widget.onSave(),
-      );
-    }
-
-    return RichText(
-      textAlign: b.align,
-      text: TextSpan(
-        text: b.text.isEmpty ? "Metin..." : b.text,
-        style: TextStyle(
-          fontSize: b.fixedFontSize,
-          fontFamily: b.fontFamily,
-          fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
-          fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
-          decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
-          color: b.text.isEmpty ? Colors.grey : Color(b.textColor),
+        children: b.styledSpans(
+          TextStyle(
+            fontSize: b.fixedFontSize,
+            fontFamily: b.fontFamily.isEmpty ? "Roboto" : b.fontFamily,
+            color: Color(b.textColor),
+          ),
         ),
       ),
     );
+  }
+
+  void _recalcBoxSize(BoxItem b) {
+    final baseStyle = TextStyle(
+      fontSize: b.fixedFontSize,
+      fontFamily: b.fontFamily.isEmpty ? "Roboto" : b.fontFamily,
+      fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
+      fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
+      decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+    );
+
+    final span = TextSpan(
+      style: baseStyle,
+      children: b.styledSpans(baseStyle),
+    );
+
+    final tp = TextPainter(
+      text: span,
+      textAlign: b.align,
+      textDirection: TextDirection.ltr,
+      maxLines: null,
+    )..layout(maxWidth: 2000); // aşırı uzun metin için üst sınır
+
+    const padH = 24.0, padV = 16.0;
+    final newW = (tp.width + padH).clamp(40.0, 4096.0);
+    final newH = (tp.height + padV).clamp(40.0, 4096.0);
+
+    if ((b.width - newW).abs() > 0.5 || (b.height - newH).abs() > 0.5) {
+      b.width = newW;
+      b.height = newH;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    }
   }
 
   Future<void> _openEditPanel() async {
@@ -214,9 +197,6 @@ class _TextObjectState extends State<TextObject> {
             widget.onSelect(false);
           } else {
             widget.onSelect(true);
-            Future.microtask(() {
-              if (!_focusNode.hasFocus) _focusNode.requestFocus();
-            });
           }
         },
         child: Transform.rotate(
@@ -234,9 +214,12 @@ class _TextObjectState extends State<TextObject> {
                     width: b.width,
                     height: b.height,
                     alignment: Alignment.center,
-                    padding: const EdgeInsets.symmetric(horizontal: _padH, vertical: _padV),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: _padH, vertical: _padV),
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(b.borderRadius * (b.width < b.height ? b.width : b.height)),
+                      borderRadius: BorderRadius.circular(
+                          b.borderRadius *
+                              (b.width < b.height ? b.width : b.height)),
                       color: Color(b.backgroundColor).withAlpha(
                         (b.backgroundOpacity * 255).clamp(0, 255).round(),
                       ),

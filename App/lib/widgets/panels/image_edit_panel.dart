@@ -1,11 +1,18 @@
+// lib/widgets/panels/image_edit_panel.dart
 import 'package:flutter/material.dart';
 import '../../models/box_item.dart';
 
-class ObjectEditPanel extends StatelessWidget {
+class ImageEditPanel extends StatelessWidget {
   final BoxItem box;
   final VoidCallback onSave;
+  final VoidCallback? onUpdate;
 
-  const ObjectEditPanel({super.key, required this.box, required this.onSave});
+  const ImageEditPanel({
+    super.key,
+    required this.box,
+    required this.onSave,
+    this.onUpdate,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -15,13 +22,19 @@ class ObjectEditPanel extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text("Obje Ayarları", style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text(
+              "Resim Ayarları",
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 12),
             Row(
               children: [
                 OutlinedButton(
                   onPressed: () {
                     box.z = DateTime.now().millisecondsSinceEpoch;
                     onSave();
+                    onUpdate?.call();
+                    Navigator.pop(context);
                   },
                   child: const Text("En üste"),
                 ),
@@ -30,6 +43,8 @@ class ObjectEditPanel extends StatelessWidget {
                   onPressed: () {
                     box.z = -DateTime.now().millisecondsSinceEpoch;
                     onSave();
+                    onUpdate?.call();
+                    Navigator.pop(context);
                   },
                   child: const Text("En alta"),
                 ),
