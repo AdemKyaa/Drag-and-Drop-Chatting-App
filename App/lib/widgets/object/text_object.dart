@@ -1,10 +1,10 @@
-// lib/widgets/object/text_object.dart
 import 'package:flutter/material.dart';
 import '../../models/box_item.dart';
 import '../panels/text_edit_panel.dart';
 
 class TextObject extends StatefulWidget {
   final BoxItem box;
+  final String displayLang; // gösterilecek dil
   final bool isEditing;
   final VoidCallback onUpdate;
   final VoidCallback onSave;
@@ -17,6 +17,7 @@ class TextObject extends StatefulWidget {
   const TextObject({
     super.key,
     required this.box,
+    required this.displayLang,
     required this.isEditing,
     required this.onUpdate,
     required this.onSave,
@@ -43,11 +44,9 @@ class _TextObjectState extends State<TextObject> {
   late double _startRot;
   late double _startFontSize;
 
-  // ==== gesture ====
+  // === Gesture ===
   void _onScaleStart(ScaleStartDetails d) {
-    if (!widget.box.isSelected) {
-      widget.onSelect(false);
-    }
+    if (!widget.box.isSelected) widget.onSelect(false);
     widget.onInteract?.call(true);
 
     _startW = widget.box.width;
@@ -59,7 +58,6 @@ class _TextObjectState extends State<TextObject> {
 
   void _onScaleUpdate(ScaleUpdateDetails d) {
     final b = widget.box;
-
     if (d.pointerCount == 1) {
       if (d.focalPointDelta.distanceSquared >= 0.25) {
         b.position += d.focalPointDelta;
@@ -98,10 +96,11 @@ class _TextObjectState extends State<TextObject> {
     widget.onSave();
   }
 
-  // ==== content ====
+  // === Content ===
   Widget _buildContent(BoxItem b) {
-    // Metin her render edildiğinde boyutu güncelle
     _recalcBoxSize(b);
+
+    final text = b.textFor(widget.displayLang);
 
     return RichText(
       textAlign: b.align,
@@ -144,7 +143,7 @@ class _TextObjectState extends State<TextObject> {
       textAlign: b.align,
       textDirection: TextDirection.ltr,
       maxLines: null,
-    )..layout(maxWidth: 2000); // aşırı uzun metin için üst sınır
+    )..layout(maxWidth: 2000);
 
     const padH = 24.0, padV = 16.0;
     final newW = (tp.width + padH).clamp(40.0, 4096.0);
@@ -180,7 +179,7 @@ class _TextObjectState extends State<TextObject> {
       left: b.position.dx,
       top: b.position.dy,
       child: GestureDetector(
-        behavior: HitTestBehavior.deferToChild,
+        behavior: HitTestBehavior.opaque,
         onScaleStart: _onScaleStart,
         onScaleUpdate: _onScaleUpdate,
         onScaleEnd: _onScaleEnd,
@@ -214,12 +213,11 @@ class _TextObjectState extends State<TextObject> {
                     width: b.width,
                     height: b.height,
                     alignment: Alignment.center,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: _padH, vertical: _padV),
+                    padding: const EdgeInsets.symmetric(horizontal: _padH, vertical: _padV),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(
-                          b.borderRadius *
-                              (b.width < b.height ? b.width : b.height)),
+                        b.borderRadius * (b.width < b.height ? b.width : b.height),
+                      ),
                       color: Color(b.backgroundColor).withAlpha(
                         (b.backgroundOpacity * 255).clamp(0, 255).round(),
                       ),
@@ -270,16 +268,11 @@ class _OutlinePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (!show) return;
     final Rect rect = Offset.zero & size;
-    final RRect rrect = RRect.fromRectAndRadius(
-      rect,
-      Radius.circular(radius),
-    );
-
+    final RRect rrect = RRect.fromRectAndRadius(rect, Radius.circular(radius));
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth
       ..color = color;
-
     canvas.drawRRect(rrect, paint);
   }
 

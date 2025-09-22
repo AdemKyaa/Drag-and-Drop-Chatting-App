@@ -2,6 +2,8 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
 import '../models/box_item.dart';
 import '../widgets/object/text_object.dart';
@@ -9,6 +11,7 @@ import '../widgets/object/image_object.dart';
 import '../widgets/delete_area.dart';
 import '../widgets/panels/toolbar_panel.dart';
 import '../widgets/panels/image_edit_panel.dart';
+import '../services/translate_service.dart';
 
 class ChatScreen extends StatefulWidget {
   final String currentUserId;
@@ -31,14 +34,58 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isOverTrash = false;
   final GlobalKey _trashKey = GlobalKey();
 
-  BoxItem? _editingBox; // şu an düzenlenen kutu
+  // şu an düzenlenen kutu (Toolbar açık olan)
+  BoxItem? _editingBox;
 
-  // 🔄 Firestore kaydetme stub’u
-  Future<void> _persistBoxes() async {
-    // Burada Firestore’a boxes listesini kaydedebilirsin.
+  // Dil (UI ve görüntüleme dili)
+  String _targetLang = 'tr'; // varsayılan TR
+
+  // Firestore/Storage referansları
+  late final FirebaseFirestore _db;
+  late final FirebaseStorage _storage;
+  late final CollectionReference _objectsCol;
+
+  // LibreTranslate
+  final _translator = TranslateService(
+    baseUrl: 'https://libretranslate.com', // kendi endpoint’iniz varsa değiştirin
+    apiKey: null,
+  );
+
+  late final CollectionReference _messagesCol;
+
+  @override
+  void initState() {
+    super.initState();
+    _db = FirebaseFirestore.instance;
+    _storage = FirebaseStorage.instance;
+
+    final chatId = _chatId();
+    _messagesCol = _db.collection('chats').doc(chatId).collection('messages');
+
+    _listenMessages(); // realtime dinleme
   }
 
-  // ✅ Çöp alanını ölç
+  void _listenMessages() {
+    _messagesCol.orderBy('z').snapshots().listen((snap) {
+      final list = <BoxItem>[];
+      for (final d in snap.docs) {
+        list.add(BoxItem.fromMap(d.data() as Map<String, dynamic>));
+      }
+      setState(() {
+        boxes
+          ..clear()
+          ..addAll(list);
+      });
+    });
+  }
+
+  String _chatId() {
+    final a = widget.currentUserId;
+    final b = widget.otherUserId ?? 'solo';
+    return (a.compareTo(b) < 0) ? '$a-$b' : '$b-$a';
+  }
+
+  // ==== Çöp Alanı ====
   bool _pointOverTrash(Offset globalPos) {
     final ctx = _trashKey.currentContext;
     final box = ctx?.findRenderObject() as RenderBox?;
@@ -51,7 +98,6 @@ class _ChatScreenState extends State<ChatScreen> {
         globalPos.dy <= pos.dy + size.height;
   }
 
-  // ✅ Drop sırasında sil
   void _handleDrop() {
     setState(() {
       boxes.removeWhere((b) => b.isSelected);
@@ -59,25 +105,24 @@ class _ChatScreenState extends State<ChatScreen> {
     _persistBoxes();
   }
 
-  // ✅ Textbox ekle
+  // ==== Ekleme ====
   void _addTextBox() {
     setState(() {
-    final box = BoxItem(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      type: "textbox",
-      position: const Offset(100, 100),
-      width: 200,
-      height: 80,
-      text: "",
-      fontFamily: "Roboto", // 🔥 Arial yerine Roboto
-      isSelected: true,
-    );
+      final box = BoxItem(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        type: "textbox",
+        position: const Offset(100, 100),
+        width: 200,
+        height: 80,
+        text: "",
+        fontFamily: 'Roboto',
+        isSelected: true,
+      );
       boxes.add(box);
-      _editingBox = box; // eklenir eklenmez düzenleme moduna geç
+      _editingBox = box; // edit mod
     });
   }
 
-  // ✅ Resim ekle (galeriden)
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
@@ -94,15 +139,90 @@ class _ChatScreenState extends State<ChatScreen> {
           isSelected: true,
         ));
       });
+      _persistBoxes(); // Storage’a yükle & Firestore’a yaz
     }
   }
 
+  // ==== Çeviri ====
+  Future<void> _translateAndSaveFor(BoxItem b) async {
+    if (b.type != 'textbox') return;
+    final srcText = b.text.trim();
+    if (srcText.isEmpty) return;
+
+    final translated = await _translator.translate(
+      text: srcText,
+      source: 'auto',
+      target: _targetLang,
+    );
+    b.setTranslation(_targetLang, translated);
+    await _saveBox(b);
+    setState(() {}); // yansıt
+  }
+
+  // ==== Firestore/Storage ====
+  Future<void> _persistBoxes() async {
+    for (final b in boxes) {
+      await _saveBox(b);
+    }
+  }
+
+  Future<void> _saveBox(BoxItem b) async {
+    if (b.type == 'image' && b.imageBytes != null && (b.imageUrl == null || b.imageUrl!.isEmpty)) {
+      final ref = _storage.ref().child('chats/${_chatId()}/images/${b.id}.bin');
+      await ref.putData(b.imageBytes!);
+      b.imageUrl = await ref.getDownloadURL();
+    }
+    await _messagesCol.doc(b.id).set(b.toMap(), SetOptions(merge: true));
+  }
+
+  Future<void> _loadFromFirestore() async {
+    final snap = await _objectsCol.orderBy('z', descending: false).get();
+    final list = <BoxItem>[];
+    for (final d in snap.docs) {
+      final m = d.data() as Map<String, dynamic>;
+      list.add(BoxItem.fromMap(m));
+    }
+    setState(() {
+      boxes
+        ..clear()
+        ..addAll(list);
+    });
+  }
+
+  // Dil değiştiğinde görünümü güncelle & çeviri cache’lenmemişse üret
+  Future<void> _setLang(String lang) async {
+    setState(() => _targetLang = lang);
+    // Eksik çevirileri üret
+    for (final b in boxes) {
+      if (b.type == 'textbox') {
+        final exists = (b.translations[lang]?.trim().isNotEmpty ?? false);
+        if (!exists && b.text.trim().isNotEmpty) {
+          // lazımsa çevir
+          final t = await _translator.translate(text: b.text, source: 'auto', target: lang);
+          b.setTranslation(lang, t);
+          await _saveBox(b);
+        }
+      }
+    }
+    setState(() {});
+  }
+
+  // ==== UI ====
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.otherUsername ?? "Chat"),
         actions: [
+          // Dil seçimi
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.translate),
+            onSelected: (v) => _setLang(v),
+            itemBuilder: (ctx) => const [
+              PopupMenuItem(value: 'tr', child: Text('Türkçe')),
+              PopupMenuItem(value: 'en', child: Text('English')),
+            ],
+          ),
           IconButton(
             icon: const Icon(Icons.text_fields),
             onPressed: _addTextBox,
@@ -120,29 +240,33 @@ class _ChatScreenState extends State<ChatScreen> {
             if (b.type == "textbox") {
               return TextObject(
                 box: b,
-                isEditing: _editingBox == b, // sadece seçilen kutu editlenir
+                displayLang: _targetLang, // <<< seçilen dile göre göster
+                isEditing: _editingBox == b,
                 onUpdate: () => setState(() {}),
-                onSave: () {
+                onSave: () async {
                   setState(() => _editingBox = null);
-                  _persistBoxes();
+                  await _translateAndSaveFor(b); // kaydederken seçili dile çevir
                 },
                 onSelect: (edit) {
                   setState(() {
-                    for (var other in boxes) {
+                    for (final other in boxes) {
                       other.isSelected = false;
                     }
                     b.isSelected = true;
+
                     if (edit) {
                       _editingBox = b;
+                    } else {
+                      _editingBox = null;
                     }
                   });
                 },
-                onDelete: () {
+                onDelete: () async {
                   setState(() {
                     boxes.remove(b);
                     if (_editingBox == b) _editingBox = null;
                   });
-                  _persistBoxes();
+                  await _messagesCol.doc(b.id).delete();
                 },
                 isOverTrash: _pointOverTrash,
                 onDraggingOverTrash: (v) => setState(() => _isOverTrash = v),
@@ -173,9 +297,9 @@ class _ChatScreenState extends State<ChatScreen> {
                       b.isSelected = true;
                     });
                   },
-                  onDelete: () {
+                  onDelete: () async {
                     setState(() => boxes.remove(b));
-                    _persistBoxes();
+                    await _messagesCol.doc(b.id).delete();
                   },
                   isOverTrash: _pointOverTrash,
                   onDraggingOverTrash: (v) => setState(() => _isOverTrash = v),
@@ -197,15 +321,22 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
 
-          // ==== Düzenleme Modu (textbox için) ====
+          // Toolbar panel (TextObject içinden zaten açılıyor/kapaniyor olabilir; varsa koruyun)
           if (_editingBox != null && _editingBox!.type == "textbox")
-            ToolbarPanel(
-              box: _editingBox!,
-              onUpdate: () => setState(() {}),
-              onSave: _persistBoxes,
-              onClose: () {
-                setState(() => _editingBox = null);
-              },
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: ToolbarPanel(
+                box: _editingBox!,
+                onUpdate: () => setState(() {}),
+                onSave: () async {
+                  final b = _editingBox!;
+                  setState(() => _editingBox = null);
+                  await _translateAndSaveFor(b);
+                },
+                onClose: () => setState(() => _editingBox = null),
+              ),
             ),
         ],
       ),

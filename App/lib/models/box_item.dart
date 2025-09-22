@@ -1,3 +1,4 @@
+// lib/models/box_item.dart
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
@@ -7,7 +8,6 @@ class TextStyleSpan {
   bool bold;
   bool italic;
   bool underline;
-  String fontFamily; // 🔹 eklendi
 
   TextStyleSpan({
     required this.start,
@@ -15,7 +15,6 @@ class TextStyleSpan {
     this.bold = false,
     this.italic = false,
     this.underline = false,
-    this.fontFamily = "Roboto", // 🔹 varsayılan font
   });
 
   TextStyleSpan copyWith({
@@ -24,7 +23,6 @@ class TextStyleSpan {
     bool? bold,
     bool? italic,
     bool? underline,
-    String? fontFamily,
   }) {
     return TextStyleSpan(
       start: start ?? this.start,
@@ -32,9 +30,24 @@ class TextStyleSpan {
       bold: bold ?? this.bold,
       italic: italic ?? this.italic,
       underline: underline ?? this.underline,
-      fontFamily: fontFamily ?? this.fontFamily,
     );
   }
+
+  Map<String, dynamic> toMap() => {
+        'start': start,
+        'end': end,
+        'bold': bold,
+        'italic': italic,
+        'underline': underline,
+      };
+
+  static TextStyleSpan fromMap(Map<String, dynamic> m) => TextStyleSpan(
+        start: (m['start'] ?? 0) as int,
+        end: (m['end'] ?? 0) as int,
+        bold: (m['bold'] ?? false) as bool,
+        italic: (m['italic'] ?? false) as bool,
+        underline: (m['underline'] ?? false) as bool,
+      );
 }
 
 class BoxItem {
@@ -60,9 +73,13 @@ class BoxItem {
   String vAlign;
   List<TextStyleSpan> styles;
 
+  /// Çeviriler (ör: {"tr": "...", "en": "..."}).
+  Map<String, String> translations;
+
   // image
-  Uint8List? imageBytes;
+  Uint8List? imageBytes; // runtime only
   double imageOpacity;
+  String? imageUrl; // Storage URL
 
   // border
   double borderRadius;
@@ -80,7 +97,7 @@ class BoxItem {
     this.isSelected = false,
     this.text = "",
     this.fixedFontSize = 16,
-    this.fontFamily = "Roboto", // 🔹 Arial yerine Roboto
+    this.fontFamily = "Roboto",
     this.bold = false,
     this.italic = false,
     this.underline = false,
@@ -89,34 +106,36 @@ class BoxItem {
     this.backgroundColor = 0xFFFFFFFF,
     this.align = TextAlign.left,
     this.vAlign = "top",
-    this.styles = const [],
+    List<TextStyleSpan>? styles,
+    this.translations = const {},
     this.imageBytes,
     this.imageOpacity = 1,
+    this.imageUrl,
     this.borderRadius = 0,
     this.z = 0,
-  });
+  }) : styles = styles ?? [];
 
-  // 🔹 RichText için styledSpans
+  /// Görüntülenecek metni dile göre verir. Yoksa orijinal metni döndürür.
+  String textFor(String lang) {
+    if (lang.isEmpty) return text;
+    final t = translations[lang];
+    if (t != null && t.trim().isNotEmpty) return t;
+    return text;
+  }
+
+  /// Çeviri yaz.
+  void setTranslation(String lang, String translated) {
+    final map = Map<String, String>.from(translations);
+    map[lang] = translated;
+    translations = map;
+  }
+
+  /// 🔹 RichText için stil uygulanmış parçalı TextSpan listesi üretir
   List<TextSpan> styledSpans(TextStyle base) {
-    if (text.isEmpty) {
-      return [
-        TextSpan(text: "Metin...", style: base.copyWith(color: Colors.grey)),
-      ];
-    }
+    if (text.isEmpty) return [TextSpan(text: "Metin...", style: base.copyWith(color: Colors.grey))];
 
     if (styles.isEmpty) {
-      return [
-        TextSpan(
-          text: text,
-          style: base.copyWith(
-            fontFamily: fontFamily,
-            color: Color(textColor),
-            fontWeight: bold ? FontWeight.bold : FontWeight.normal,
-            fontStyle: italic ? FontStyle.italic : FontStyle.normal,
-            decoration: underline ? TextDecoration.underline : TextDecoration.none,
-          ),
-        ),
-      ];
+      return [TextSpan(text: text, style: base.copyWith(color: Color(textColor)))];
     }
 
     List<TextSpan> spans = [];
@@ -126,16 +145,12 @@ class BoxItem {
       if (s.start > cursor) {
         spans.add(TextSpan(
           text: text.substring(cursor, s.start),
-          style: base.copyWith(
-            fontFamily: fontFamily,
-            color: Color(textColor),
-          ),
+          style: base.copyWith(color: Color(textColor)),
         ));
       }
       spans.add(TextSpan(
         text: text.substring(s.start, s.end),
         style: base.copyWith(
-          fontFamily: s.fontFamily.isNotEmpty ? s.fontFamily : fontFamily,
           fontWeight: s.bold ? FontWeight.bold : FontWeight.normal,
           fontStyle: s.italic ? FontStyle.italic : FontStyle.normal,
           decoration: s.underline ? TextDecoration.underline : TextDecoration.none,
@@ -148,13 +163,71 @@ class BoxItem {
     if (cursor < text.length) {
       spans.add(TextSpan(
         text: text.substring(cursor),
-        style: base.copyWith(
-          fontFamily: fontFamily,
-          color: Color(textColor),
-        ),
+        style: base.copyWith(color: Color(textColor)),
       ));
     }
 
     return spans;
+  }
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'type': type,
+        'position': {'dx': position.dx, 'dy': position.dy},
+        'width': width,
+        'height': height,
+        'rotation': rotation,
+        'z': z,
+        'text': text,
+        'fixedFontSize': fixedFontSize,
+        'fontFamily': fontFamily,
+        'bold': bold,
+        'italic': italic,
+        'underline': underline,
+        'textColor': textColor,
+        'backgroundOpacity': backgroundOpacity,
+        'backgroundColor': backgroundColor,
+        'align': align.index,
+        'vAlign': vAlign,
+        'styles': styles.map((e) => e.toMap()).toList(),
+        'translations': translations,
+        'imageOpacity': imageOpacity,
+        'imageUrl': imageUrl, // Storage URL
+        'borderRadius': borderRadius,
+        'isSelected': isSelected,
+      };
+
+  static BoxItem fromMap(Map<String, dynamic> m) {
+    final pos = m['position'] as Map<String, dynamic>? ?? {'dx': 100.0, 'dy': 100.0};
+    final styleList = (m['styles'] as List?)?.cast<Map>() ?? const [];
+    return BoxItem(
+      id: (m['id'] ?? '') as String,
+      type: (m['type'] ?? 'textbox') as String,
+      position: Offset(
+        (pos['dx'] ?? 100.0).toDouble(),
+        (pos['dy'] ?? 100.0).toDouble(),
+      ),
+      width: (m['width'] ?? 200.0).toDouble(),
+      height: (m['height'] ?? 80.0).toDouble(),
+      rotation: (m['rotation'] ?? 0.0).toDouble(),
+      z: (m['z'] ?? 0) as int,
+      text: (m['text'] ?? '') as String,
+      fixedFontSize: (m['fixedFontSize'] ?? 16.0).toDouble(),
+      fontFamily: (m['fontFamily'] ?? 'Roboto') as String,
+      bold: (m['bold'] ?? false) as bool,
+      italic: (m['italic'] ?? false) as bool,
+      underline: (m['underline'] ?? false) as bool,
+      textColor: (m['textColor'] ?? 0xFF000000) as int,
+      backgroundOpacity: (m['backgroundOpacity'] ?? 1.0).toDouble(),
+      backgroundColor: (m['backgroundColor'] ?? 0xFFFFFFFF) as int,
+      align: TextAlign.values[(m['align'] ?? TextAlign.left.index) as int],
+      vAlign: (m['vAlign'] ?? 'top') as String,
+      styles: styleList.map((e) => TextStyleSpan.fromMap(Map<String, dynamic>.from(e))).toList(),
+      translations: Map<String, String>.from(m['translations'] ?? const {}),
+      imageOpacity: (m['imageOpacity'] ?? 1.0).toDouble(),
+      imageUrl: m['imageUrl'] as String?,
+      borderRadius: (m['borderRadius'] ?? 0.0).toDouble(),
+      isSelected: (m['isSelected'] ?? false) as bool,
+    );
   }
 }
