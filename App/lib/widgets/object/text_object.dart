@@ -59,6 +59,30 @@ class _TextObjectState extends State<TextObject> {
     _startFontSize = widget.box.fixedFontSize;
   }
 
+  Size _measureText(BoxItem b, {double maxWidth = 2000}) {
+    final baseStyle = TextStyle(
+      fontSize: b.fixedFontSize,
+      fontFamily: b.fontFamily.isEmpty ? "Roboto" : b.fontFamily,
+      fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
+      fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
+      decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+    );
+
+    final span = TextSpan(
+      style: baseStyle,
+      children: b.styledSpans(baseStyle),
+    );
+
+    final tp = TextPainter(
+      text: span,
+      textAlign: b.align,
+      textDirection: TextDirection.ltr,
+      maxLines: null,
+    )..layout(maxWidth: maxWidth);
+
+    return Size(tp.width, tp.height);
+  }
+
   void _onScaleUpdate(ScaleUpdateDetails d) {
     final b = widget.box;
     if (d.pointerCount == 1) {
@@ -68,9 +92,10 @@ class _TextObjectState extends State<TextObject> {
     }
     if (d.pointerCount >= 2) {
       if (d.scale > 0) {
-        b.width = (_startW * d.scale).clamp(24.0, 4096.0);
-        b.height = (_startH * d.scale).clamp(24.0, 4096.0);
-        b.fixedFontSize = (_startFontSize * d.scale).clamp(8.0, 300.0);
+        final textSize = _measureText(b);
+        const padH = 24.0, padV = 16.0;
+        b.width = (textSize.width + padH).clamp(24, 4096.0);
+        b.height = (textSize.height + padV).clamp(24, 4096.0);
       }
       b.rotation = _startRot + d.rotation;
     }
@@ -149,8 +174,8 @@ class _TextObjectState extends State<TextObject> {
     )..layout(maxWidth: 2000);
 
     const padH = 24.0, padV = 16.0;
-    final newW = (tp.width + padH).clamp(40.0, 4096.0);
-    final newH = (tp.height + padV).clamp(40.0, 4096.0);
+    final newW = (tp.width + padH).clamp(24.0, 4096.0);
+    final newH = (tp.height + padV).clamp(24.0, 4096.0);
 
     if ((b.width - newW).abs() > 0.5 || (b.height - newH).abs() > 0.5) {
       b.width = newW;

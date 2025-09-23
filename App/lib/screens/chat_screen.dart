@@ -419,11 +419,21 @@ class _ChatScreenState extends State<ChatScreen> {
 
                   final b = _pinchTarget!;
                   final textSize = measureText(b, 2000);
+                  // satır sayısı
                   final lineCount = (textSize.height / b.fixedFontSize).ceil().clamp(1, 999);
 
-                  b.width = (_pinchStartW * scale).clamp(textSize.width + 32, 4096.0);
-                  b.height = (_pinchStartH * scale).clamp(lineCount * 16 + 8, 4096.0);
+                  // padding değerleri (TextObject’tekiyle aynı)
+                  const padH = 24.0;
+                  const padV = 16.0;
+
+                  // scale edilmiş font
                   b.fixedFontSize = (_pinchStartFont * scale).clamp(8.0, 300.0);
+
+                  // metin ölçümü yeniden yapılmalı çünkü font değişti
+                  final scaledTextSize = measureText(b, 2000);
+
+                  b.width = (scaledTextSize.width + padH).clamp(40.0, 4096.0);
+                  b.height = (scaledTextSize.height + padV).clamp(40.0, 4096.0);
                   b.rotation = _pinchStartRot + deltaAng;
 
                   setState(() {}); // anlık yansıt
