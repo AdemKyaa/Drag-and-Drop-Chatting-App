@@ -1,5 +1,4 @@
 // lib/screens/chat_screen.dart
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -43,7 +42,6 @@ class _ChatScreenState extends State<ChatScreen> {
   // Firestore/Storage referansları
   late final FirebaseFirestore _db;
   late final FirebaseStorage _storage;
-  late final CollectionReference _objectsCol;
 
   // LibreTranslate
   final _translator = TranslateService(
@@ -175,19 +173,6 @@ class _ChatScreenState extends State<ChatScreen> {
     await _messagesCol.doc(b.id).set(b.toMap(), SetOptions(merge: true));
   }
 
-  Future<void> _loadFromFirestore() async {
-    final snap = await _objectsCol.orderBy('z', descending: false).get();
-    final list = <BoxItem>[];
-    for (final d in snap.docs) {
-      final m = d.data() as Map<String, dynamic>;
-      list.add(BoxItem.fromMap(m));
-    }
-    setState(() {
-      boxes
-        ..clear()
-        ..addAll(list);
-    });
-  }
 
   // Dil değiştiğinde görünümü güncelle & çeviri cache’lenmemişse üret
   Future<void> _setLang(String lang) async {

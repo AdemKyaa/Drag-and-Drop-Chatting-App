@@ -100,7 +100,7 @@ class _TextObjectState extends State<TextObject> {
   Widget _buildContent(BoxItem b) {
     _recalcBoxSize(b);
 
-    final text = b.textFor(widget.displayLang);
+    b.textFor(widget.displayLang);
 
     return RichText(
       textAlign: b.align,

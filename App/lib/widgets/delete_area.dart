@@ -38,11 +38,11 @@ class DeleteArea extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.delete, color: base),
+              const Icon(Icons.delete, color: base),
               const SizedBox(width: 8),
               Text(
                 isActive ? "Bırakırsan silinir" : "Buraya sürükleyip bırak → sil",
-                style: TextStyle(color: base),
+                style: const TextStyle(color: base),
               ),
             ],
           ),
