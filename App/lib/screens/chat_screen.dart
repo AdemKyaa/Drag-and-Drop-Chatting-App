@@ -266,6 +266,23 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() {});
   }
 
+    int _lineCount(BoxItem b, {double maxWidth = 2000}) {
+      final style = TextStyle(
+        fontSize: b.fixedFontSize,
+        fontFamily: b.fontFamily.isEmpty ? "Roboto" : b.fontFamily,
+      );
+
+      final span = TextSpan(style: style, children: b.styledSpans(style));
+
+      final tp = TextPainter(
+        text: span,
+        textDirection: TextDirection.ltr,
+        maxLines: null,
+      )..layout(maxWidth: maxWidth);
+
+      return tp.computeLineMetrics().length;
+    }
+
   Size measureText(BoxItem b, double maxWidth) {
     final baseStyle = TextStyle(
       fontSize: b.fixedFontSize,
@@ -450,11 +467,11 @@ class _ChatScreenState extends State<ChatScreen> {
                   final b = _pinchTarget!;
                   final textSize = measureText(b, 2000);
                   // satır sayısı
-                  final lineCount = (textSize.height / b.fixedFontSize).ceil().clamp(1, 999);
+                  final lineCount = _lineCount(b);
 
                   // padding değerleri (TextObject’tekiyle aynı)
-                  const padH = 24.0;
-                  const padV = 16.0;
+                  const padH = 32.0;
+                  const padV = 24.0;
 
                   // scale edilmiş font
                   b.fixedFontSize = (_pinchStartFont * scale).clamp(8.0, 300.0);
@@ -462,8 +479,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   // metin ölçümü yeniden yapılmalı çünkü font değişti
                   final scaledTextSize = measureText(b, 2000);
 
-                  b.width = (scaledTextSize.width + padH).clamp(40.0, 4096.0);
-                  b.height = (scaledTextSize.height + padV).clamp(lineCount * b.fixedFontSize * 1.2, 4096.0);
+                  b.width = (scaledTextSize.width + padH).clamp(24.0, 4096.0);
+                  b.height = (lineCount * b.fixedFontSize * 1.2 + padV).clamp(24.0, 4096.0);
                   b.rotation = _pinchStartRot + deltaAng;
 
                   setState(() {}); // anlık yansıt

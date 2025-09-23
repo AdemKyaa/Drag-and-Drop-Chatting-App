@@ -38,8 +38,8 @@ class TextObject extends StatefulWidget {
 }
 
 class _TextObjectState extends State<TextObject> {
-  static const double _padH = 12;
-  static const double _padV = 8;
+  static const double _padH = 16;
+  static const double _padV = 12;
   static const double _toolbarH = 48;
 
   int _overTrashFrames = 0;
@@ -85,31 +85,55 @@ class _TextObjectState extends State<TextObject> {
     return Size(tp.width, tp.height);
   }
 
+  int _lineCount(BoxItem b, {double maxWidth = 2000}) {
+    final style = TextStyle(
+      fontSize: b.fixedFontSize,
+      fontFamily: b.fontFamily.isEmpty ? "Roboto" : b.fontFamily,
+    );
+
+    final span = TextSpan(style: style, children: b.styledSpans(style));
+
+    final tp = TextPainter(
+      text: span,
+      textDirection: TextDirection.ltr,
+      maxLines: null,
+    )..layout(maxWidth: maxWidth);
+
+    return tp.computeLineMetrics().length;
+  }
+
   void _onScaleUpdate(ScaleUpdateDetails d) {
     final b = widget.box;
     if (d.pointerCount == 1) {
-    if (d.focalPointDelta.distanceSquared >= 0.25) {
-      final dx = d.focalPointDelta.dx;
-      final dy = d.focalPointDelta.dy;
+      if (d.focalPointDelta.distanceSquared >= 0.25) {
+        final dx = d.focalPointDelta.dx;
+        final dy = d.focalPointDelta.dy;
 
-      // kutunun açısını tersine döndür → delta’yı local eksene çevir
-      final angle = -b.rotation;
-      final rotatedDx = dx * cos(angle) + dy * sin(angle);
-      final rotatedDy = -(dx * sin(angle) - dy * cos(angle));
+        // kutunun açısını tersine döndür → delta’yı local eksene çevir
+        final angle = -(_startRot + d.rotation);
+        final rotatedDx = dx * cos(angle) + dy * sin(angle);
+        final rotatedDy = -(dx * sin(angle) - dy * cos(angle));
 
-      b.position += Offset(rotatedDx, rotatedDy);
-    }
+        b.position += Offset(rotatedDx, rotatedDy);
+      }
   }
 
     if (d.pointerCount >= 2) {
       if (d.scale > 0) {
-        b.fixedFontSize = (_startFontSize * d.scale).clamp(8.0, 300.0);
+        // 1) Yeni font size
+        final newFont = (_startFontSize * d.scale).clamp(8.0, 300.0);
+        b.fixedFontSize = newFont;
 
+        // 2) Yeni metin ölçümü
         final textSize = _measureText(b);
-        const padH = 24.0, padV = 16.0;
+        final lineCount = _lineCount(b);
+
+        const padH = 32.0, padV = 24.0;
         b.width = (textSize.width + padH).clamp(24, 4096.0);
-        b.height = (textSize.height + padV).clamp(24, 4096.0);
+        b.height = (lineCount * newFont * 1.2 + padV).clamp(24.0, 4096.0);
       }
+
+      // Rotation her frame güncel rotation ile hesaplanmalı
       b.rotation = _startRot + d.rotation;
     }
 
@@ -186,9 +210,12 @@ class _TextObjectState extends State<TextObject> {
       maxLines: null,
     )..layout(maxWidth: 2000);
 
-    const padH = 24.0, padV = 16.0;
+    final lineCount = tp.computeLineMetrics().length;
+    const padH = 32.0, padV = 24.0;
+    
     final newW = (tp.width + padH).clamp(24.0, 4096.0);
-    final newH = (tp.height + padV).clamp(24.0, 4096.0);
+    final newH = (lineCount * b.fixedFontSize * 1.2 + padV)
+    .clamp(24.0, 4096.0);
 
     if ((b.width - newW).abs() > 0.5 || (b.height - newH).abs() > 0.5) {
       b.width = newW;

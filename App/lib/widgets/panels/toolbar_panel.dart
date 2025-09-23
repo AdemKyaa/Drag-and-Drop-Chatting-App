@@ -157,7 +157,7 @@ class _ToolbarPanelState extends State<ToolbarPanel> {
                       final base = GoogleFonts.getFont(
                         b.fontFamily.isEmpty ? "Roboto" : b.fontFamily,
                         textStyle: TextStyle(
-                          fontSize: b.fixedFontSize,
+                          fontSize: 16,
                           fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
                           fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
                           decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
@@ -199,7 +199,7 @@ class _ToolbarPanelState extends State<ToolbarPanel> {
                             style: GoogleFonts.getFont(
                               b.fontFamily.isEmpty ? "Roboto" : b.fontFamily,
                               textStyle: TextStyle(
-                                fontSize: b.fixedFontSize,
+                                fontSize: 16,
                                 fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
                                 fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
                                 decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
