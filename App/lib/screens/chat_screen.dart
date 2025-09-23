@@ -250,6 +250,24 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() {});
   }
 
+  Size measureText(BoxItem b, double maxWidth) {
+    final baseStyle = TextStyle(
+      fontSize: b.fixedFontSize,
+      fontFamily: b.fontFamily.isEmpty ? "Roboto" : b.fontFamily,
+      fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
+      fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
+      decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+    );
+
+    final tp = TextPainter(
+      text: TextSpan(text: b.text, style: baseStyle),
+      textDirection: TextDirection.ltr,
+      maxLines: null,
+    )..layout(maxWidth: maxWidth);
+
+    return Size(tp.width, tp.height);
+  }
+
   // ==== UI ====
   @override
   Widget build(BuildContext context) {
@@ -400,8 +418,11 @@ class _ChatScreenState extends State<ChatScreen> {
                   final deltaAng = ang - _pinchStartAngle;
 
                   final b = _pinchTarget!;
-                  b.width = (_pinchStartW * scale).clamp(24.0, 4096.0);
-                  b.height = (_pinchStartH * scale).clamp(24.0, 4096.0);
+                  final textSize = measureText(b, 2000);
+                  final lineCount = (textSize.height / b.fixedFontSize).ceil().clamp(1, 999);
+
+                  b.width = (_pinchStartW * scale).clamp(textSize.width + 32, 4096.0);
+                  b.height = (_pinchStartH * scale).clamp(lineCount * 16 + 8, 4096.0);
                   b.fixedFontSize = (_pinchStartFont * scale).clamp(8.0, 300.0);
                   b.rotation = _pinchStartRot + deltaAng;
 
