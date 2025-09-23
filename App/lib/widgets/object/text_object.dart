@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import '../../models/box_item.dart';
 import '../panels/text_edit_panel.dart';
@@ -86,12 +88,23 @@ class _TextObjectState extends State<TextObject> {
   void _onScaleUpdate(ScaleUpdateDetails d) {
     final b = widget.box;
     if (d.pointerCount == 1) {
-      if (d.focalPointDelta.distanceSquared >= 0.25) {
-        b.position += d.focalPointDelta;
-      }
+    if (d.focalPointDelta.distanceSquared >= 0.25) {
+      final dx = d.focalPointDelta.dx;
+      final dy = d.focalPointDelta.dy;
+
+      // kutunun açısını tersine döndür → delta’yı local eksene çevir
+      final angle = -b.rotation;
+      final rotatedDx = dx * cos(angle) + dy * sin(angle);
+      final rotatedDy = -(dx * sin(angle) - dy * cos(angle));
+
+      b.position += Offset(rotatedDx, rotatedDy);
     }
+  }
+
     if (d.pointerCount >= 2) {
       if (d.scale > 0) {
+        b.fixedFontSize = (_startFontSize * d.scale).clamp(8.0, 300.0);
+
         final textSize = _measureText(b);
         const padH = 24.0, padV = 16.0;
         b.width = (textSize.width + padH).clamp(24, 4096.0);
@@ -180,9 +193,6 @@ class _TextObjectState extends State<TextObject> {
     if ((b.width - newW).abs() > 0.5 || (b.height - newH).abs() > 0.5) {
       b.width = newW;
       b.height = newH;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() {});
-      });
     }
   }
 
@@ -206,79 +216,79 @@ class _TextObjectState extends State<TextObject> {
     return Positioned(
       left: b.position.dx,
       top: b.position.dy,
-      child: Listener(
-        behavior: HitTestBehavior.opaque,
-        onPointerDown: (e) {
-          widget.onPrimaryPointerDown?.call(widget.box, e.pointer, e.position);
-        },
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onScaleStart: _onScaleStart,
-          onScaleUpdate: _onScaleUpdate,
-          onScaleEnd: _onScaleEnd,
-          onDoubleTap: () async {
-            b.isSelected = true;
-            widget.onUpdate();
-            widget.onSelect(false);
-            await _openEditPanel();
-          },
-          onTap: () {
-            final alreadySelected = b.isSelected;
-            if (!alreadySelected) {
-              b.isSelected = true;
-              widget.onSelect(false);
-            } else {
-              widget.onSelect(true);
-            }
-          },
-          child: Transform.rotate(
-            angle: b.rotation,
-            child: SizedBox(
-              width: b.width,
-              height: b.height + (showToolbar ? (_toolbarH + 6) : 0),
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned(
-                    left: 0,
-                    top: (showToolbar ? (_toolbarH + 6) : 0),
-                    child: Container(
-                      width: b.width,
-                      height: b.height,
-                      alignment: Alignment.center,
-                      padding: const EdgeInsets.symmetric(horizontal: _padH, vertical: _padV),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(
-                          b.borderRadius * (b.width < b.height ? b.width : b.height),
-                        ),
-                        color: Color(b.backgroundColor).withAlpha(
-                          (b.backgroundOpacity * 255).clamp(0, 255).round(),
+        child: Transform.rotate(
+          angle: b.rotation,
+          child: Listener(
+            behavior: HitTestBehavior.opaque,
+            onPointerDown: (e) {
+              widget.onPrimaryPointerDown?.call(widget.box, e.pointer, e.position);
+            },
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onScaleStart: _onScaleStart,
+              onScaleUpdate: _onScaleUpdate,
+              onScaleEnd: _onScaleEnd,
+              onDoubleTap: () async {
+                b.isSelected = true;
+                widget.onUpdate();
+                widget.onSelect(false);
+                await _openEditPanel();
+              },
+              onTap: () {
+                final alreadySelected = b.isSelected;
+                if (!alreadySelected) {
+                  b.isSelected = true;
+                  widget.onSelect(false);
+                } else {
+                  widget.onSelect(true);
+                }
+              },
+                child: SizedBox(
+                  width: b.width,
+                  height: b.height + (showToolbar ? (_toolbarH + 6) : 0),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Positioned(
+                        left: 0,
+                        top: (showToolbar ? (_toolbarH + 6) : 0),
+                        child: Container(
+                          width: b.width,
+                          height: b.height,
+                          alignment: Alignment.center,
+                          padding: const EdgeInsets.symmetric(horizontal: _padH, vertical: _padV),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(
+                              b.borderRadius * (b.width < b.height ? b.width : b.height),
+                            ),
+                            color: Color(b.backgroundColor).withAlpha(
+                              (b.backgroundOpacity * 255).clamp(0, 255).round(),
+                            ),
+                          ),
+                          child: _buildContent(b),
                         ),
                       ),
-                      child: _buildContent(b),
-                    ),
-                  ),
-                  if (b.isSelected)
-                    Positioned(
-                      left: 0,
-                      top: (showToolbar ? (_toolbarH + 6) : 0),
-                      child: IgnorePointer(
-                        child: CustomPaint(
-                          size: Size(b.width, b.height),
-                          painter: OutlinePainter(
-                            radius: b.borderRadius,
-                            show: true,
-                            color: Colors.blueAccent,
-                            strokeWidth: 2,
+                      if (b.isSelected)
+                        Positioned(
+                          left: 0,
+                          top: (showToolbar ? (_toolbarH + 6) : 0),
+                          child: IgnorePointer(
+                            child: CustomPaint(
+                              size: Size(b.width, b.height),
+                              painter: OutlinePainter(
+                                radius: b.borderRadius,
+                                show: true,
+                                color: Colors.blueAccent,
+                                strokeWidth: 2,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                ],
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
       ),
     );
   }

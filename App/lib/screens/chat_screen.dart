@@ -1,4 +1,6 @@
 // lib/screens/chat_screen.dart
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -89,6 +91,20 @@ class _ChatScreenState extends State<ChatScreen> {
 
     _pinchStartDistance = 0;
     _pinchStartAngle = 0;
+  }
+
+  bool _pointInsideRotatedBox(BoxItem b, Offset globalPos) {
+    final stageOrigin = _stageTopLeftGlobal();
+    final center = stageOrigin + b.position + Offset(b.width / 2, b.height / 2);
+
+    final dx = globalPos.dx - center.dx;
+    final dy = globalPos.dy - center.dy;
+
+    final angle = -b.rotation; // ters dönüş
+    final rotatedX = dx * cos(angle) - dy * sin(angle);
+    final rotatedY = dx * sin(angle) + dy * cos(angle);
+
+    return rotatedX.abs() <= b.width / 2 && rotatedY.abs() <= b.height / 2;
   }
 
   // şu an düzenlenen kutu (Toolbar açık olan)
@@ -297,47 +313,61 @@ class _ChatScreenState extends State<ChatScreen> {
       body: Stack(
         key: _stageKey,
         children: [
-          // objeler
-          ...boxes.map((b) {
-            if (b.type == "textbox") {
-              return TextObject(
-                box: b,
-                displayLang: _targetLang, // <<< seçilen dile göre göster
-                isEditing: _editingBox == b,
-                onUpdate: () => setState(() {}),
-                onSave: () async {
-                  setState(() => _editingBox = null);
-                  await _translateAndSaveFor(b); // kaydederken seçili dile çevir
-                },
-                onSelect: (edit) {
-                  setState(() {
-                    for (final other in boxes) {
-                      other.isSelected = false;
-                    }
-                    b.isSelected = true;
+          Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () {
+              setState(() {
+                for (final b in boxes) {
+                  b.isSelected = false;
+                }
+                _editingBox = null;
+              });
+            },
+          ),
+        ),
 
-                    if (edit) {
-                      _editingBox = b;
-                    } else {
-                      _editingBox = null;
-                    }
-                  });
-                },
-                onDelete: () async {
-                  setState(() {
-                    boxes.remove(b);
-                    if (_editingBox == b) _editingBox = null;
-                  });
-                  await _messagesCol.doc(b.id).delete();
-                },
-                isOverTrash: _pointOverTrash,
-                onDraggingOverTrash: (v) => setState(() => _isOverTrash = v),
-                onInteract: (v) {},
-                onPrimaryPointerDown: (box, pid, globalPos) {
-                  _beginPinchFromObject(box, pid, globalPos);
-                },
-              );
-            } else if (b.type == "image") {
+        // objeler
+        ...boxes.map((b) {
+          if (b.type == "textbox") {
+            return TextObject(
+              box: b,
+              displayLang: _targetLang,
+              isEditing: _editingBox == b,
+              onUpdate: () => setState(() {}),
+              onSave: () async {
+                setState(() => _editingBox = null);
+                await _translateAndSaveFor(b);
+              },
+              onSelect: (edit) {
+                setState(() {
+                  for (final other in boxes) {
+                    other.isSelected = false; // diğerlerini bırak
+                  }
+                  b.isSelected = true;
+
+                  if (edit) {
+                    _editingBox = b;
+                  } else {
+                    _editingBox = null;
+                  }
+                });
+              },
+              onDelete: () async {
+                setState(() {
+                  boxes.remove(b);
+                  if (_editingBox == b) _editingBox = null;
+                });
+                await _messagesCol.doc(b.id).delete();
+              },
+              isOverTrash: _pointOverTrash,
+              onDraggingOverTrash: (v) => setState(() => _isOverTrash = v),
+              onInteract: (v) {},
+              onPrimaryPointerDown: (box, pid, globalPos) {
+                _beginPinchFromObject(box, pid, globalPos);
+              },
+            );
+          }else if (b.type == "image") {
               return GestureDetector(
                 onDoubleTap: () async {
                   await showModalBottomSheet(
@@ -382,7 +412,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 // Eğer bir obje üzerinde “bir parmak” zaten basılı ise ve ikinci parmak yoksa:
                 if (_pinchTarget != null && _pinchPrimaryId != null && _pinchSecondaryId == null) {
                   // İkinci parmak bu obje DIŞINA mı geldi?
-                  if (!_pointInsideBoxGlobal(_pinchTarget!, e.position)) {
+                  if (!_pointInsideRotatedBox(_pinchTarget!, e.position)) {
                     _pinchSecondaryId = e.pointer;
                     _pinchSecondaryStartGlobal = e.position;
 
@@ -433,7 +463,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   final scaledTextSize = measureText(b, 2000);
 
                   b.width = (scaledTextSize.width + padH).clamp(40.0, 4096.0);
-                  b.height = (scaledTextSize.height + padV).clamp(40.0, 4096.0);
+                  b.height = (scaledTextSize.height + padV).clamp(lineCount * b.fixedFontSize * 1.2, 4096.0);
                   b.rotation = _pinchStartRot + deltaAng;
 
                   setState(() {}); // anlık yansıt
@@ -446,6 +476,10 @@ class _ChatScreenState extends State<ChatScreen> {
                   _overlayPinchActive = false;
                 }
                 if (e.pointer == _pinchPrimaryId) {
+                  final b = _pinchTarget;
+                  if (b != null) {
+                    _saveBox(b); // Firestore’a yaz
+                  }
                   // tüm pinchi bitir
                   _pinchTarget = null;
                   _pinchPrimaryId = null;
