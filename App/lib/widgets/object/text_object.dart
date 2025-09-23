@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/box_item.dart';
 import '../panels/text_edit_panel.dart';
+import '../object/handles/outlines.dart';
 
 class TextObject extends StatefulWidget {
   final BoxItem box;
@@ -13,6 +14,7 @@ class TextObject extends StatefulWidget {
   final bool Function(Offset) isOverTrash;
   final void Function(bool)? onDraggingOverTrash;
   final void Function(bool)? onInteract;
+  final void Function(BoxItem box, int pointerId, Offset globalPos)? onPrimaryPointerDown;
 
   const TextObject({
     super.key,
@@ -26,6 +28,7 @@ class TextObject extends StatefulWidget {
     required this.isOverTrash,
     this.onDraggingOverTrash,
     this.onInteract,
+    this.onPrimaryPointerDown,
   });
 
   @override
@@ -178,108 +181,80 @@ class _TextObjectState extends State<TextObject> {
     return Positioned(
       left: b.position.dx,
       top: b.position.dy,
-      child: GestureDetector(
+      child: Listener(
         behavior: HitTestBehavior.opaque,
-        onScaleStart: _onScaleStart,
-        onScaleUpdate: _onScaleUpdate,
-        onScaleEnd: _onScaleEnd,
-        onDoubleTap: () async {
-          b.isSelected = true;
-          widget.onUpdate();
-          widget.onSelect(false);
-          await _openEditPanel();
+        onPointerDown: (e) {
+          widget.onPrimaryPointerDown?.call(widget.box, e.pointer, e.position);
         },
-        onTap: () {
-          final alreadySelected = b.isSelected;
-          if (!alreadySelected) {
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onScaleStart: _onScaleStart,
+          onScaleUpdate: _onScaleUpdate,
+          onScaleEnd: _onScaleEnd,
+          onDoubleTap: () async {
             b.isSelected = true;
+            widget.onUpdate();
             widget.onSelect(false);
-          } else {
-            widget.onSelect(true);
-          }
-        },
-        child: Transform.rotate(
-          angle: b.rotation,
-          child: SizedBox(
-            width: b.width,
-            height: b.height + (showToolbar ? (_toolbarH + 6) : 0),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Positioned(
-                  left: 0,
-                  top: (showToolbar ? (_toolbarH + 6) : 0),
-                  child: Container(
-                    width: b.width,
-                    height: b.height,
-                    alignment: Alignment.center,
-                    padding: const EdgeInsets.symmetric(horizontal: _padH, vertical: _padV),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(
-                        b.borderRadius * (b.width < b.height ? b.width : b.height),
-                      ),
-                      color: Color(b.backgroundColor).withAlpha(
-                        (b.backgroundOpacity * 255).clamp(0, 255).round(),
-                      ),
-                    ),
-                    child: _buildContent(b),
-                  ),
-                ),
-
-                if (b.isSelected)
+            await _openEditPanel();
+          },
+          onTap: () {
+            final alreadySelected = b.isSelected;
+            if (!alreadySelected) {
+              b.isSelected = true;
+              widget.onSelect(false);
+            } else {
+              widget.onSelect(true);
+            }
+          },
+          child: Transform.rotate(
+            angle: b.rotation,
+            child: SizedBox(
+              width: b.width,
+              height: b.height + (showToolbar ? (_toolbarH + 6) : 0),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
                   Positioned(
                     left: 0,
                     top: (showToolbar ? (_toolbarH + 6) : 0),
-                    child: IgnorePointer(
-                      child: CustomPaint(
-                        size: Size(b.width, b.height),
-                        painter: _OutlinePainter(
-                          radius: b.borderRadius,
-                          show: true,
-                          color: Colors.blueAccent,
-                          strokeWidth: 2,
+                    child: Container(
+                      width: b.width,
+                      height: b.height,
+                      alignment: Alignment.center,
+                      padding: const EdgeInsets.symmetric(horizontal: _padH, vertical: _padV),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(
+                          b.borderRadius * (b.width < b.height ? b.width : b.height),
+                        ),
+                        color: Color(b.backgroundColor).withAlpha(
+                          (b.backgroundOpacity * 255).clamp(0, 255).round(),
+                        ),
+                      ),
+                      child: _buildContent(b),
+                    ),
+                  ),
+                  if (b.isSelected)
+                    Positioned(
+                      left: 0,
+                      top: (showToolbar ? (_toolbarH + 6) : 0),
+                      child: IgnorePointer(
+                        child: CustomPaint(
+                          size: Size(b.width, b.height),
+                          painter: OutlinePainter(
+                            radius: b.borderRadius,
+                            show: true,
+                            color: Colors.blueAccent,
+                            strokeWidth: 2,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
       ),
     );
   }
-}
-
-class _OutlinePainter extends CustomPainter {
-  final double radius;
-  final bool show;
-  final Color color;
-  final double strokeWidth;
-
-  _OutlinePainter({
-    required this.radius,
-    required this.show,
-    required this.color,
-    this.strokeWidth = 2,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (!show) return;
-    final Rect rect = Offset.zero & size;
-    final RRect rrect = RRect.fromRectAndRadius(rect, Radius.circular(radius));
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..color = color;
-    canvas.drawRRect(rrect, paint);
-  }
-
-  @override
-  bool shouldRepaint(_OutlinePainter old) =>
-      old.radius != radius ||
-      old.show != show ||
-      old.color != color ||
-      old.strokeWidth != strokeWidth;
 }

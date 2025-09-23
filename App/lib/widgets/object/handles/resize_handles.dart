@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../models/box_item.dart';
+import '../../../models/box_item.dart';
 
 class ResizeHandles extends StatelessWidget {
   final BoxItem box;

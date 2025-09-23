@@ -169,22 +169,25 @@ class _ToolbarPanelState extends State<ToolbarPanel> {
                         text: TextSpan(text: _controller.text.isEmpty ? "Metin..." : _controller.text, style: base),
                         textAlign: b.align,
                         textDirection: TextDirection.ltr,
-                        maxLines: null,
+                        maxLines: 14,
                       )..layout(maxWidth: maxWidth);
 
-                      final w = (tp.width + 16).clamp(100.0, double.infinity); // sonsuz genişlik
-                      final h = (tp.height + 16).clamp(60.0, 1000.0); // satır sayısına göre artış
+                      final metrics = tp.computeLineMetrics();
+                      final lineCount = metrics.length;
+                      final w = (tp.width * 1.05 + 32).clamp(80.0, maxWidth); // sonsuz genişlik
+                      final h = (lineCount * 23 + 32).clamp(30.0, double.infinity).toDouble(); // satır sayısına göre artış
 
                       return GestureDetector(
                         onTap: () {}, // panel kapanmasın
                         child: Container(
                           width: w > maxWidth ? maxWidth : w,
                           constraints: BoxConstraints(minHeight: h, maxHeight: h),
+                        alignment: Alignment.center,
                           margin: const EdgeInsets.all(16),
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(
-                              b.borderRadius * (b.width < b.height ? b.width : b.height),
+                              b.borderRadius * (b.width < b.height ? b.width : b.height).clamp(0, 128),
                             ),
                             color: Color(b.backgroundColor).withAlpha(255),
                           ),

@@ -32,6 +32,64 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<BoxItem> boxes = [];
   bool _isOverTrash = false;
   final GlobalKey _trashKey = GlobalKey();
+  // Object Scaling
+  final GlobalKey _stageKey = GlobalKey();  // sahnenin global pozisyonunu hesaplamak için
+
+  // Global pinch/rotate state
+  BoxItem? _pinchTarget;
+  int? _pinchPrimaryId;
+  Offset? _pinchPrimaryStartGlobal;
+
+  int? _pinchSecondaryId;
+  Offset? _pinchSecondaryStartGlobal;
+
+  double _pinchStartW = 0;
+  double _pinchStartH = 0;
+  double _pinchStartRot = 0;
+  double _pinchStartFont = 0;
+
+  double _pinchStartDistance = 0;  // iki parmak arası mesafe
+  double _pinchStartAngle = 0;     // atan2 açısı
+  bool _overlayPinchActive = false;
+
+  Offset _stageTopLeftGlobal() {
+    final ro = _stageKey.currentContext?.findRenderObject() as RenderBox?;
+    if (ro == null) return Offset.zero;
+    return ro.localToGlobal(Offset.zero);
+  }
+
+  bool _pointInsideBoxGlobal(BoxItem b, Offset global) {
+    // rotasyonu basitçe yok sayıyoruz (dikdörtgen testi yeterli)
+    final stageOrigin = _stageTopLeftGlobal();
+    final rect = Rect.fromLTWH(
+      stageOrigin.dx + b.position.dx,
+      stageOrigin.dy + b.position.dy,
+      b.width,
+      b.height,
+    );
+    return rect.contains(global);
+  }
+
+  void _beginPinchFromObject(BoxItem b, int pointerId, Offset globalPos) {
+    // Zaten başka obje ile pinch varsa yok say
+    if (_pinchTarget != null && _pinchTarget != b) return;
+
+    _pinchTarget = b;
+    _pinchPrimaryId = pointerId;
+    _pinchPrimaryStartGlobal = globalPos;
+
+    _pinchSecondaryId = null;
+    _pinchSecondaryStartGlobal = null;
+    _overlayPinchActive = false;
+
+    _pinchStartW = b.width;
+    _pinchStartH = b.height;
+    _pinchStartRot = b.rotation;
+    _pinchStartFont = b.fixedFontSize;
+
+    _pinchStartDistance = 0;
+    _pinchStartAngle = 0;
+  }
 
   // şu an düzenlenen kutu (Toolbar açık olan)
   BoxItem? _editingBox;
@@ -219,6 +277,7 @@ class _ChatScreenState extends State<ChatScreen> {
         ],
       ),
       body: Stack(
+        key: _stageKey,
         children: [
           // objeler
           ...boxes.map((b) {
@@ -256,6 +315,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 isOverTrash: _pointOverTrash,
                 onDraggingOverTrash: (v) => setState(() => _isOverTrash = v),
                 onInteract: (v) {},
+                onPrimaryPointerDown: (box, pid, globalPos) {
+                  _beginPinchFromObject(box, pid, globalPos);
+                },
               );
             } else if (b.type == "image") {
               return GestureDetector(
@@ -294,6 +356,91 @@ class _ChatScreenState extends State<ChatScreen> {
             }
             return const SizedBox.shrink();
           }),
+
+          Positioned.fill(
+            child: Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerDown: (e) {
+                // Eğer bir obje üzerinde “bir parmak” zaten basılı ise ve ikinci parmak yoksa:
+                if (_pinchTarget != null && _pinchPrimaryId != null && _pinchSecondaryId == null) {
+                  // İkinci parmak bu obje DIŞINA mı geldi?
+                  if (!_pointInsideBoxGlobal(_pinchTarget!, e.position)) {
+                    _pinchSecondaryId = e.pointer;
+                    _pinchSecondaryStartGlobal = e.position;
+
+                    // iki parmak arasındaki ilk vektör (primary -> secondary)
+                    final p1 = _pinchPrimaryStartGlobal!;
+                    final p2 = _pinchSecondaryStartGlobal!;
+                    final v = p2 - p1;
+                    _pinchStartDistance = v.distance;
+                    _pinchStartAngle = v.direction; // atan2
+
+                    _overlayPinchActive = true;
+                  }
+                }
+              },
+              onPointerMove: (e) {
+                // Sadece overlay pinch modunda işliyoruz (ikinci parmak obje dışında)
+                if (_overlayPinchActive && _pinchTarget != null && _pinchPrimaryId != null && _pinchSecondaryId != null) {
+                  // Primary veya secondary hareket ettiyse güncelle
+                  if (e.pointer == _pinchPrimaryId) {
+                    _pinchPrimaryStartGlobal = e.position;
+                  } else if (e.pointer == _pinchSecondaryId) {
+                    _pinchSecondaryStartGlobal = e.position;
+                  }
+
+                  final p1 = _pinchPrimaryStartGlobal!;
+                  final p2 = _pinchSecondaryStartGlobal!;
+
+                  final v = p2 - p1;
+                  final dist = v.distance.clamp(0.001, 1e6);
+                  final ang = v.direction;
+
+                  final scale = (dist / (_pinchStartDistance == 0 ? dist : _pinchStartDistance)).clamp(0.1, 100.0);
+                  final deltaAng = ang - _pinchStartAngle;
+
+                  final b = _pinchTarget!;
+                  b.width = (_pinchStartW * scale).clamp(24.0, 4096.0);
+                  b.height = (_pinchStartH * scale).clamp(24.0, 4096.0);
+                  b.fixedFontSize = (_pinchStartFont * scale).clamp(8.0, 300.0);
+                  b.rotation = _pinchStartRot + deltaAng;
+
+                  setState(() {}); // anlık yansıt
+                }
+              },
+              onPointerUp: (e) {
+                if (e.pointer == _pinchSecondaryId) {
+                  _pinchSecondaryId = null;
+                  _pinchSecondaryStartGlobal = null;
+                  _overlayPinchActive = false;
+                }
+                if (e.pointer == _pinchPrimaryId) {
+                  // tüm pinchi bitir
+                  _pinchTarget = null;
+                  _pinchPrimaryId = null;
+                  _pinchPrimaryStartGlobal = null;
+                  _pinchSecondaryId = null;
+                  _pinchSecondaryStartGlobal = null;
+                  _overlayPinchActive = false;
+                }
+              },
+              onPointerCancel: (e) {
+                if (e.pointer == _pinchSecondaryId) {
+                  _pinchSecondaryId = null;
+                  _pinchSecondaryStartGlobal = null;
+                  _overlayPinchActive = false;
+                }
+                if (e.pointer == _pinchPrimaryId) {
+                  _pinchTarget = null;
+                  _pinchPrimaryId = null;
+                  _pinchPrimaryStartGlobal = null;
+                  _pinchSecondaryId = null;
+                  _pinchSecondaryStartGlobal = null;
+                  _overlayPinchActive = false;
+                }
+              },
+            ),
+          ),
 
           // çöp alanı
           Align(
