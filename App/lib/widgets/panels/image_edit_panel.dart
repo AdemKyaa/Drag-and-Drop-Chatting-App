@@ -2,56 +2,74 @@
 import 'package:flutter/material.dart';
 import '../../models/box_item.dart';
 
-class ImageEditPanel extends StatelessWidget {
+class ImageEditPanel extends StatefulWidget {
   final BoxItem box;
+  final VoidCallback onUpdate;
   final VoidCallback onSave;
-  final VoidCallback? onUpdate;
 
   const ImageEditPanel({
     super.key,
     required this.box,
+    required this.onUpdate,
     required this.onSave,
-    this.onUpdate,
   });
 
   @override
+  State<ImageEditPanel> createState() => _ImageEditPanelState();
+}
+
+class _ImageEditPanelState extends State<ImageEditPanel> {
+  @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              "Resim Ayarları",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                OutlinedButton(
-                  onPressed: () {
-                    box.z = DateTime.now().millisecondsSinceEpoch;
-                    onSave();
-                    onUpdate?.call();
-                    Navigator.pop(context);
+    final b = widget.box;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Radius slider
+          Row(
+            children: [
+              const Text("Radius"),
+              Expanded(
+                child: Slider(
+                  value: b.borderRadius,
+                  min: 0,
+                  max: 1,
+                  onChanged: (v) {
+                    setState(() {
+                      b.borderRadius = v;
+                    });
+                    widget.onUpdate();
                   },
-                  child: const Text("En üste"),
+                  onChangeEnd: (_) => widget.onSave(),
                 ),
-                const SizedBox(width: 12),
-                OutlinedButton(
-                  onPressed: () {
-                    box.z = -DateTime.now().millisecondsSinceEpoch;
-                    onSave();
-                    onUpdate?.call();
-                    Navigator.pop(context);
+              ),
+            ],
+          ),
+
+          // Opacity slider
+          Row(
+            children: [
+              const Text("Opacity"),
+              Expanded(
+                child: Slider(
+                  value: b.backgroundOpacity,
+                  min: 0,
+                  max: 1,
+                  onChanged: (v) {
+                    setState(() {
+                      b.backgroundOpacity = v;
+                    });
+                    widget.onUpdate();
                   },
-                  child: const Text("En alta"),
+                  onChangeEnd: (_) => widget.onSave(),
                 ),
-              ],
-            ),
-          ],
-        ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

@@ -19,13 +19,14 @@ class ResizeHandles extends StatelessWidget {
     return Stack(
       clipBehavior: Clip.none,
       children: [
+        // Örnek: sağ-alt tutacak
         Positioned(
-          right: -s / 2,
-          bottom: -s / 2,
+          right: -s/2,
+          bottom: -s/2,
           child: GestureDetector(
             onPanUpdate: (d) {
-              box.width = (box.width + d.delta.dx).clamp(50, 2000);
-              box.height = (box.height + d.delta.dy).clamp(50, 2000);
+              box.width  = (box.width  + d.delta.dx).clamp(32, 4096);
+              box.height = (box.height + d.delta.dy).clamp(32, 4096);
               onUpdate();
             },
             onPanEnd: (_) => onSave(),
@@ -39,6 +40,7 @@ class ResizeHandles extends StatelessWidget {
             ),
           ),
         ),
+        // (İstersen diğer 7 köşe/kenar tutacaklarını da burada ekleyebilirsin)
       ],
     );
   }

@@ -1,6 +1,9 @@
-// lib/widgets/object/image_object.dart
+import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../models/box_item.dart';
+import '../object/handles/outlines.dart';
+import '../panels/image_edit_panel.dart';
+import '../object/handles/resize_handles.dart';
 
 class ImageObject extends StatefulWidget {
   final BoxItem box;
@@ -12,6 +15,7 @@ class ImageObject extends StatefulWidget {
   final bool Function(Offset) isOverTrash;
   final void Function(bool)? onDraggingOverTrash;
   final void Function(bool)? onInteract;
+  final void Function(BoxItem box, int pointerId, Offset globalPos)? onPrimaryPointerDown;
 
   const ImageObject({
     super.key,
@@ -24,6 +28,7 @@ class ImageObject extends StatefulWidget {
     required this.isOverTrash,
     this.onDraggingOverTrash,
     this.onInteract,
+    this.onPrimaryPointerDown,
   });
 
   @override
@@ -31,44 +36,175 @@ class ImageObject extends StatefulWidget {
 }
 
 class _ImageObjectState extends State<ImageObject> {
+  static const double _toolbarH = 48;
+
+  int _overTrashFrames = 0;
+  Offset? _lastGlobalPoint;
+  late double _startW, _startH, _startRot;
+
+  void _onScaleStart(ScaleStartDetails d) {
+    if (!widget.box.isSelected) widget.onSelect(false);
+    widget.onInteract?.call(true);
+
+    final b = widget.box;
+    _startW = b.width;
+    _startH = b.height;
+    _startRot = b.rotation;
+    _lastGlobalPoint = d.focalPoint;
+  }
+
   void _onScaleUpdate(ScaleUpdateDetails d) {
     final b = widget.box;
+
+    // Tek parmak → sürükleme (rotasyona göre yerel eksende taşı)
     if (d.pointerCount == 1) {
-      b.position += d.focalPointDelta;
-    } else if (d.pointerCount >= 2) {
-      b.width = (b.width * d.scale).clamp(50, 2000);
-      b.height = (b.height * d.scale).clamp(50, 2000);
-      b.rotation += d.rotation;
+      if (d.focalPointDelta.distanceSquared >= 0.25) {
+        final dx = d.focalPointDelta.dx;
+        final dy = d.focalPointDelta.dy;
+        final angle = -(_startRot + d.rotation);
+        final localDx = dx * cos(angle) + dy * sin(angle);
+        final localDy = -(dx * sin(angle) - dy * cos(angle));
+        b.position += Offset(localDx, localDy);
+      }
     }
+
+    // İki parmak → boyut + açı
+    if (d.pointerCount >= 2) {
+      if (d.scale > 0) {
+        b.width  = (_startW * d.scale).clamp(32.0, 4096.0);
+        b.height = (_startH * d.scale).clamp(32.0, 4096.0);
+      }
+      b.rotation = _startRot + d.rotation;
+    }
+
+    _lastGlobalPoint = d.focalPoint;
+
+    // Çöp alanı highlight
+    final over = _lastGlobalPoint != null && widget.isOverTrash(_lastGlobalPoint!);
+    widget.onDraggingOverTrash?.call(over);
+
     widget.onUpdate();
+  }
+
+  void _onScaleEnd(ScaleEndDetails d) {
+    widget.onDraggingOverTrash?.call(false);
+    widget.onInteract?.call(false);
+    widget.onUpdate();
+
+    final over = _lastGlobalPoint != null && widget.isOverTrash(_lastGlobalPoint!);
+    if (over) {
+      widget.onDelete();
+    } else {
+      widget.onSave();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final b = widget.box;
+    final showToolbar = widget.isEditing;
+
     return Positioned(
       left: b.position.dx,
       top: b.position.dy,
-      child: GestureDetector(
-        onScaleUpdate: _onScaleUpdate,
-        onTap: () {
-          widget.onSelect(true);
-        },
-        onDoubleTap: () => widget.onDelete(),
-        child: Transform.rotate(
-          angle: b.rotation,
-          child: Container(
-            width: b.width,
-            height: b.height,
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: b.isSelected ? Colors.blue : Colors.transparent,
-                width: 2,
+      child: Transform.rotate(
+        angle: b.rotation,
+        child: Listener(
+          behavior: HitTestBehavior.opaque,
+          onPointerDown: (e) {
+            widget.onPrimaryPointerDown?.call(widget.box, e.pointer, e.position);
+          },
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onScaleStart: _onScaleStart,
+            onScaleUpdate: _onScaleUpdate,
+            onScaleEnd: _onScaleEnd,
+            onDoubleTap: () async {
+              b.isSelected = true;
+              widget.onUpdate();
+              widget.onSelect(false);
+              await showModalBottomSheet(
+                context: context,
+                builder: (_) => ImageEditPanel(
+                  box: b,
+                  onUpdate: widget.onUpdate,
+                  onSave: widget.onSave,
+                ),
+              );
+            },
+            onTap: () {
+              final alreadySelected = b.isSelected;
+              if (!alreadySelected) {
+                b.isSelected = true;
+                widget.onSelect(false);
+              } else {
+                widget.onSelect(true);
+              }
+            },
+            child: SizedBox(
+              width: b.width,
+              height: b.height + (showToolbar ? (_toolbarH + 6) : 0),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  // Görsel
+                  Positioned(
+                    top: (showToolbar ? (_toolbarH + 6) : 0),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(
+                        b.borderRadius * (b.width < b.height ? b.width : b.height),
+                        ),
+                        child: Opacity(
+                          opacity: b.backgroundOpacity.clamp(0.0, 1.0), // panelden kontrol edeceğiz
+                          child:
+                          Container(
+                          width: b.width,
+                          height: b.height,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(
+                              b.borderRadius * (b.width < b.height ? b.width : b.height),
+                            ),
+                            color: Color(b.backgroundColor).withAlpha(
+                              (b.backgroundOpacity * 255).clamp(0, 255).round(),
+                            ),
+                            image: b.imageBytes != null
+                                ? DecorationImage(image: MemoryImage(b.imageBytes!), fit: BoxFit.cover)
+                                : (b.imageUrl != null && b.imageUrl!.isNotEmpty
+                                    ? DecorationImage(image: NetworkImage(b.imageUrl!), fit: BoxFit.cover)
+                                    : null),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Outline
+                  if (b.isSelected)
+                    IgnorePointer(
+                      child: CustomPaint(
+                        size: Size(b.width, b.height),
+                        painter: OutlinePainter(
+                          radius: b.borderRadius,
+                          show: true,
+                          color: Colors.blueAccent,
+                          strokeWidth: 2,
+                        ),
+                      ),
+                    ),
+
+                  // Handle’lar
+                  if (b.isSelected)
+                    Positioned.fill(
+                    child: ResizeHandles(
+                      box: b,
+                      onUpdate: widget.onUpdate,
+                      onSave: widget.onSave,
+                    ),
+                  ),
+
+                ],
               ),
             ),
-            child: b.imageBytes == null
-                ? const Center(child: Text("📷 Resim Yok"))
-                : Image.memory(b.imageBytes!, fit: BoxFit.cover),
           ),
         ),
       ),
