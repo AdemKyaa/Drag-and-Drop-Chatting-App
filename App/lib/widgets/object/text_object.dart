@@ -17,6 +17,8 @@ class TextObject extends StatefulWidget {
   final void Function(bool)? onDraggingOverTrash;
   final void Function(bool)? onInteract;
   final void Function(BoxItem box, int pointerId, Offset globalPos)? onPrimaryPointerDown;
+  final VoidCallback? onBringToFront;
+  final VoidCallback? onSendToBack;
 
   const TextObject({
     super.key,
@@ -31,6 +33,8 @@ class TextObject extends StatefulWidget {
     this.onDraggingOverTrash,
     this.onInteract,
     this.onPrimaryPointerDown,
+    this.onBringToFront,
+    this.onSendToBack,
   });
 
   @override
@@ -233,6 +237,8 @@ class _TextObjectState extends State<TextObject> {
         box: widget.box,
         onUpdate: widget.onUpdate,
         onSave: widget.onSave,
+        onBringToFront: widget.onBringToFront,
+        onSendToBack: widget.onSendToBack,
       ),
     );
   }

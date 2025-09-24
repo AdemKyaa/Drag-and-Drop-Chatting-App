@@ -8,12 +8,16 @@ class TextEditPanel extends StatefulWidget {
   final BoxItem box;
   final VoidCallback onUpdate;
   final VoidCallback onSave;
+  final VoidCallback? onBringToFront;
+  final VoidCallback? onSendToBack;
 
   const TextEditPanel({
     super.key,
     required this.box,
     required this.onUpdate,
     required this.onSave,
+    this.onBringToFront,
+    this.onSendToBack,
   });
 
   @override
@@ -176,6 +180,26 @@ class _TextEditPanelState extends State<TextEditPanel> {
                       },
                     );
                   },
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.vertical_align_top),
+                    label: const Text("En Üste Al"),
+                    onPressed: widget.onBringToFront,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.vertical_align_bottom),
+                    label: const Text("En Alta Al"),
+                    onPressed: widget.onSendToBack,
+                  ),
                 ),
               ],
             ),

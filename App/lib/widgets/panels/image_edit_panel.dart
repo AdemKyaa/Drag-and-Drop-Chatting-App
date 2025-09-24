@@ -67,12 +67,12 @@ class _ImageEditPanelState extends State<ImageEditPanel> {
               const Text("Opacity"),
               Expanded(
                 child: Slider(
-                  value: b.backgroundOpacity,
+                  value: b.imageOpacity,
                   min: 0,
                   max: 1,
                   onChanged: (v) {
                     setState(() {
-                      b.backgroundOpacity = v;
+                      b.imageOpacity = v;
                     });
                     widget.onUpdate();
                   },
@@ -81,26 +81,22 @@ class _ImageEditPanelState extends State<ImageEditPanel> {
               ),
             ],
           ),
-          Expanded(
-            child: OutlinedButton(
-              onPressed: () {
-                widget.box.z = 999999; // en üste
-                widget.onUpdate();
-                widget.onSave();
-              },
-              child: const Text("En Üste Al"),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: OutlinedButton(
-              onPressed: () {
-                widget.box.z = -999999; // en alta
-                widget.onUpdate();
-                widget.onSave();
-              },
-              child: const Text("En Alta Al"),
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: widget.onBringToFront,
+                  child: const Text("En Üste Al"),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: widget.onSendToBack,
+                  child: const Text("En Alta Al"),
+                ),
+              ),
+            ],
           ),
         ],
       ),

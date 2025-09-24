@@ -36,7 +36,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isOverTrash = false;
   final GlobalKey _trashKey = GlobalKey();
   // Object Scaling
-  final GlobalKey _stageKey = GlobalKey();  // sahnenin global pozisyonunu hesaplamak için
+  final GlobalKey _stageKey = GlobalKey(); // sahnenin global pozisyonunu hesaplamak için
 
   // Global pinch/rotate state
   BoxItem? _pinchTarget;
@@ -51,8 +51,8 @@ class _ChatScreenState extends State<ChatScreen> {
   double _pinchStartRot = 0;
   double _pinchStartFont = 0;
 
-  double _pinchStartDistance = 0;  // iki parmak arası mesafe
-  double _pinchStartAngle = 0;     // atan2 açısı
+  double _pinchStartDistance = 0; // iki parmak arası mesafe
+  double _pinchStartAngle = 0; // atan2 açısı
   bool _overlayPinchActive = false;
 
   Offset _stageTopLeftGlobal() {
@@ -122,7 +122,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _storage = FirebaseStorage.instance;
 
     final chatId = _chatId();
-    _messagesCol = _db.collection('chats').doc(chatId).collection('messages');
+    _messagesCol = _db.collection(chatId);
 
     _listenMessages(); // realtime dinleme
   }
@@ -191,19 +191,37 @@ class _ChatScreenState extends State<ChatScreen> {
     if (picked == null) return;
 
     final bytes = await picked.readAsBytes();
+
+    // ÇÖZÜM: Resmin orijinal boyutlarını al ve oranını koru
+    var decodedImage = await decodeImageFromList(bytes);
+    double originalWidth = decodedImage.width.toDouble();
+    double originalHeight = decodedImage.height.toDouble();
+    double aspectRatio = originalWidth / originalHeight;
+
+    const double maxSize = 250.0; // Ekranda ilk oluşacağı maksimum boyut
+    double newWidth;
+    double newHeight;
+
+    if (aspectRatio > 1) { // Geniş resim
+      newWidth = maxSize;
+      newHeight = maxSize / aspectRatio;
+    } else { // Yüksek veya kare resim
+      newHeight = maxSize;
+      newWidth = maxSize * aspectRatio;
+    }
+
     final box = BoxItem(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       type: "image",
       position: const Offset(150, 150),
-      width: 200,
-      height: 200,
+      width: newWidth,
+      height: newHeight,
       imageBytes: bytes,
       isSelected: true,
     );
 
     setState(() => boxes.add(box));
 
-    // 🔴 Tüm kutuları kaydetme! Sadece bu resmi kaydet:
     await _saveBox(box);
   }
 
@@ -231,21 +249,32 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _saveBox(BoxItem b) async {
-    if (b.type == 'image') {
-      if ((b.imageUrl == null || b.imageUrl!.isEmpty) && b.imageBytes != null) {
-        final ref = _storage.ref().child('chats/${_chatId()}/messages/${b.id}.jpg');
-        await ref.putData(
-          b.imageBytes!,
-          SettableMetadata(contentType: 'image/jpeg'),
-        );
-        b.imageUrl = await ref.getDownloadURL();
-        b.imageBytes = null;
+    try {
+      if (b.type == 'image') {
+        if ((b.imageUrl == null || b.imageUrl!.isEmpty) && b.imageBytes != null) {
+          debugPrint("Resim yükleniyor...");
+          final ref = _storage.ref().child('${_chatId()}/${b.id}.jpg');
+          await ref.putData(
+            b.imageBytes!,
+            SettableMetadata(contentType: 'image/jpeg'),
+          );
+          b.imageUrl = null;
+          b.imageBytes = null; // Yüklendikten sonra byte'ları temizle
+          debugPrint("Resim yüklendi, URL: ${b.imageUrl}");
+        }
       }
-    }
 
-    await _messagesCol.doc(b.id).set(b.toMap(), SetOptions(merge: true));
-    if (!mounted) return;
-    setState(() {});
+      await _messagesCol.doc(b.id).set(b.toMap(), SetOptions(merge: true));
+      debugPrint("${b.id} ID'li nesne kaydedildi.");
+      if (!mounted) return;
+      setState(() {});
+    } catch (e) {
+      debugPrint("HATA! _saveBox başarısız: $e");
+      // Kullanıcıya bir hata mesajı göstermek için
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Kaydetme hatası: $e")),
+      );
+    }
   }
 
   Future<void> _setLang(String lang) async {
@@ -383,6 +412,24 @@ class _ChatScreenState extends State<ChatScreen> {
               onPrimaryPointerDown: (box, pid, globalPos) {
                 _beginPinchFromObject(box, pid, globalPos);
               },
+              onBringToFront: () {
+                setState(() {
+                  final values = boxes.map((e) => (e.z is num) ? (e.z as num).toDouble() : 0.0);
+                  final maxZ = values.isEmpty ? 0.0 : values.reduce((a, c) => a > c ? a : c);
+                  b.z = (maxZ + 1).toInt();
+                  boxes.sort((a, b) => a.z.compareTo(b.z));
+                });
+                _saveBox(b);
+              },
+              onSendToBack: () {
+                setState(() {
+                  final values = boxes.map((e) => (e.z is num) ? (e.z as num).toDouble() : 0.0);
+                  final minZ = values.isEmpty ? 0.0 : values.reduce((a, c) => a < c ? a : c);
+                  b.z = (minZ - 1).toInt();
+                  boxes.sort((a, b) => a.z.compareTo(b.z));
+                });
+                _saveBox(b);
+              },
             );
           } else if (b.type == "image") {
             return ImageObject(
@@ -416,7 +463,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 setState(() {
                   final values = boxes.map((e) => (e.z is num) ? (e.z as num).toDouble() : 0.0);
                   final maxZ = values.isEmpty ? 0.0 : values.reduce((a, c) => a > c ? a : c);
-                  b.z = (maxZ + 1) as int;
+                  b.z = (maxZ + 1).toInt();
+                  boxes.sort((a, b) => a.z.compareTo(b.z));
                 });
                 _saveBox(b);
               },
@@ -424,7 +472,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 setState(() {
                   final values = boxes.map((e) => (e.z is num) ? (e.z as num).toDouble() : 0.0);
                   final minZ = values.isEmpty ? 0.0 : values.reduce((a, c) => a < c ? a : c);
-                  b.z = (minZ - 1) as int;
+                  b.z = (minZ - 1).toInt();
+                  boxes.sort((a, b) => a.z.compareTo(b.z));
                 });
                 _saveBox(b);
               },
