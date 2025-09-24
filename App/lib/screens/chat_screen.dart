@@ -231,29 +231,19 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _saveBox(BoxItem b) async {
-    debugPrint('[SAVE] start id=${b.id} type=${b.type} url=${b.imageUrl} hasBytes=${b.imageBytes != null}');
-
-    try {
-      if (b.type == 'image') {
-        if (b.imageBytes != null) {
-          final ref = _storage.ref().child('chats/${_chatId()}/images/${b.id}.jpg');
-          await ref.putData(b.imageBytes!, SettableMetadata(contentType: 'image/jpeg'));
-          final url = await ref.getDownloadURL();
-          b.imageUrl = url;
-          b.imageBytes = null;
-        }
+    if (b.type == 'image') {
+      if ((b.imageUrl == null || b.imageUrl!.isEmpty) && b.imageBytes != null) {
+        final ref = _storage.ref().child('chats/${_chatId()}/messages/${b.id}.jpg');
+        await ref.putData(
+          b.imageBytes!,
+          SettableMetadata(contentType: 'image/jpeg'),
+        );
+        b.imageUrl = await ref.getDownloadURL();
+        b.imageBytes = null;
       }
-
-      final map = b.toMap();
-      debugPrint('[SAVE] toMap done for ${b.id} urlInMap=${map['imageUrl']}');
-
-      await _messagesCol.doc(b.id).set(map, SetOptions(merge: true));
-      debugPrint('[SAVE] firestore ok id=${b.id}');
-    } catch (e, st) {
-      debugPrint('[SAVE][ERR] $e');
-      debugPrint('$st');
     }
 
+    await _messagesCol.doc(b.id).set(b.toMap(), SetOptions(merge: true));
     if (!mounted) return;
     setState(() {});
   }
