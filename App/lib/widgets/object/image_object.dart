@@ -1,72 +1,76 @@
+// lib/widgets/object/image_object.dart
 import 'dart:math';
 import 'package:flutter/material.dart';
+
 import '../../models/box_item.dart';
-import '../object/handles/outlines.dart';
 import '../panels/image_edit_panel.dart';
+import '../object/handles/outlines.dart';
 import '../object/handles/resize_handles.dart';
 
-  class ImageObject extends StatefulWidget {
-    final BoxItem box;
-    final bool isEditing;
-    final VoidCallback onUpdate;
-    final VoidCallback onSave;
-    final void Function(bool edit) onSelect;
-    final VoidCallback onDelete;
-    final bool Function(Offset) isOverTrash;
-    final void Function(bool)? onDraggingOverTrash;
-    final void Function(bool)? onInteract;
-    final void Function(BoxItem box, int pointerId, Offset globalPos)? onPrimaryPointerDown;
-    final VoidCallback? onBringToFront;
-    final VoidCallback? onSendToBack;
+class ImageObject extends StatefulWidget {
+  final BoxItem box;
+  final bool isEditing;
+  final VoidCallback onUpdate;
+  final VoidCallback onSave;
+  final void Function(bool edit) onSelect;
+  final VoidCallback onDelete;
+  final bool Function(Offset) isOverTrash;
+  final void Function(bool)? onDraggingOverTrash;
+  final void Function(bool)? onInteract;
+  final void Function(BoxItem box, int pointerId, Offset globalPos)? onPrimaryPointerDown;
 
-    const ImageObject({
-      super.key,
-      required this.box,
-      required this.isEditing,
-      required this.onUpdate,
-      required this.onSave,
-      required this.onSelect,
-      required this.onDelete,
-      required this.isOverTrash,
-      this.onDraggingOverTrash,
-      this.onInteract,
-      this.onPrimaryPointerDown,
-      this.onBringToFront,
-      this.onSendToBack,
-    });
+  // z-index
+  final VoidCallback? onBringToFront;
+  final VoidCallback? onSendToBack;
 
-    @override
-    State<ImageObject> createState() => _ImageObjectState();
+  const ImageObject({
+    super.key,
+    required this.box,
+    required this.isEditing,
+    required this.onUpdate,
+    required this.onSave,
+    required this.onSelect,
+    required this.onDelete,
+    required this.isOverTrash,
+    this.onDraggingOverTrash,
+    this.onInteract,
+    this.onPrimaryPointerDown,
+    this.onBringToFront,
+    this.onSendToBack,
+  });
+
+  @override
+  State<ImageObject> createState() => _ImageObjectState();
+}
+
+class _ImageObjectState extends State<ImageObject> {
+  static const double _toolbarH = 48;
+  Offset? _lastGlobalPoint;
+  late double _startW;
+  late double _startH;
+  late double _startRot;
+
+  int _overTrashFrames = 0;
+
+  // === Gesture ===
+  void _onScaleStart(ScaleStartDetails d) {
+    if (!widget.box.isSelected) widget.onSelect(false);
+    widget.onInteract?.call(true);
+
+    _startW = widget.box.width;
+    _startH = widget.box.height;
+    _startRot = widget.box.rotation;
+    _lastGlobalPoint = d.focalPoint;
   }
-
-  class _ImageObjectState extends State<ImageObject> {
-    static const double _toolbarH = 48;
-
-    int _overTrashFrames = 0;
-    Offset? _lastGlobalPoint;
-    late double _startW, _startH, _startRot;
-
-    void _onScaleStart(ScaleStartDetails d) {
-      if (!widget.box.isSelected) widget.onSelect(false);
-      widget.onInteract?.call(true);
-
-      final b = widget.box;
-      _startW = b.width;
-      _startH = b.height;
-      _startRot = b.rotation;
-      _lastGlobalPoint = d.focalPoint;
-    }
 
   void _onScaleUpdate(ScaleUpdateDetails d) {
     final b = widget.box;
 
     if (d.pointerCount == 1) {
-      // Tek parmak → sürükleme
       if (d.focalPointDelta.distanceSquared >= 0.25) {
         final dx = d.focalPointDelta.dx;
         final dy = d.focalPointDelta.dy;
 
-        // açılı objelerde kaymayı doğru hesapla
         final angle = -(_startRot + d.rotation);
         final rotatedDx = dx * cos(angle) + dy * sin(angle);
         final rotatedDy = -(dx * sin(angle) - dy * cos(angle));
@@ -76,28 +80,35 @@ import '../object/handles/resize_handles.dart';
     }
 
     if (d.pointerCount >= 2) {
-      // Çift parmak → ölçek + rotate
-      final newW = (_startW * d.scale).clamp(40.0, 4096.0);
-      final newH = (_startH * d.scale).clamp(40.0, 4096.0);
-      b.width = newW;
-      b.height = newH;
+      if (d.scale > 0) {
+        b.width = (_startW * d.scale).clamp(32.0, 4096.0);
+        b.height = (_startH * d.scale).clamp(32.0, 4096.0);
+      }
       b.rotation = _startRot + d.rotation;
     }
+
+    _lastGlobalPoint = d.focalPoint;
+    bool over = _lastGlobalPoint != null && widget.isOverTrash(_lastGlobalPoint!);
+    _overTrashFrames = over ? (_overTrashFrames + 1) : 0;
+    widget.onDraggingOverTrash?.call(over);
 
     widget.onUpdate();
   }
 
   void _onScaleEnd(ScaleEndDetails d) {
+    bool shouldDelete = false;
+    final over = _lastGlobalPoint != null && widget.isOverTrash(_lastGlobalPoint!);
+    if (_overTrashFrames >= 2 && over) shouldDelete = true;
+
     widget.onDraggingOverTrash?.call(false);
     widget.onInteract?.call(false);
     widget.onUpdate();
 
-    final over = _lastGlobalPoint != null && widget.isOverTrash(_lastGlobalPoint!);
-    if (over) {
+    if (shouldDelete) {
       widget.onDelete();
-    } else {
-      widget.onSave();
+      return;
     }
+    widget.onSave();
   }
 
   @override
@@ -156,26 +167,17 @@ import '../object/handles/resize_handles.dart';
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(
                         b.borderRadius * (b.width < b.height ? b.width : b.height),
-                        ),
-                        child: Opacity(
-                          opacity: b.backgroundOpacity.clamp(0.0, 1.0), // panelden kontrol edeceğiz
-                          child:
-                          Container(
+                      ),
+                      child: Opacity(
+                        opacity: b.imageOpacity.clamp(0.0, 1.0),
+                        child: SizedBox(
                           width: b.width,
                           height: b.height,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(
-                              b.borderRadius * (b.width < b.height ? b.width : b.height),
-                            ),
-                            color: Color(b.backgroundColor).withAlpha(
-                              (b.backgroundOpacity * 255).clamp(0, 255).round(),
-                            ),
-                            image: b.imageBytes != null
-                                ? DecorationImage(image: MemoryImage(b.imageBytes!), fit: BoxFit.cover)
-                                : (b.imageUrl != null && b.imageUrl!.isNotEmpty
-                                    ? DecorationImage(image: NetworkImage(b.imageUrl!), fit: BoxFit.cover)
-                                    : null),
-                          ),
+                          child: (b.imageBytes != null)
+                              ? Image.memory(b.imageBytes!, fit: BoxFit.cover)
+                              : (b.imageUrl != null && b.imageUrl!.isNotEmpty)
+                                  ? Image.network(b.imageUrl!, fit: BoxFit.cover)
+                                  : const SizedBox.shrink(),
                         ),
                       ),
                     ),
@@ -198,13 +200,12 @@ import '../object/handles/resize_handles.dart';
                   // Handle’lar
                   if (b.isSelected)
                     Positioned.fill(
-                    child: ResizeHandles(
-                      box: b,
-                      onUpdate: widget.onUpdate,
-                      onSave: widget.onSave,
+                      child: ResizeHandles(
+                        box: b,
+                        onUpdate: widget.onUpdate,
+                        onSave: widget.onSave,
+                      ),
                     ),
-                  ),
-
                 ],
               ),
             ),

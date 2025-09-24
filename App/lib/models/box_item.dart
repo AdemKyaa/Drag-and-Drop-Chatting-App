@@ -95,6 +95,7 @@ class BoxItem {
     this.height = 80,
     this.rotation = 0,
     this.isSelected = false,
+    this.imageUrl,
     this.text = "",
     this.fixedFontSize = 16,
     this.fontFamily = "Roboto",
@@ -110,7 +111,6 @@ class BoxItem {
     this.translations = const {},
     this.imageBytes,
     this.imageOpacity = 1,
-    this.imageUrl,
     this.borderRadius = 0,
     this.z = 0,
   }) : styles = styles ?? [];
@@ -170,36 +170,42 @@ class BoxItem {
     return spans;
   }
 
-  Map<String, dynamic> toMap() => {
-        'id': id,
-        'type': type,
-        'position': {'dx': position.dx, 'dy': position.dy},
-        'width': width,
-        'height': height,
-        'rotation': rotation,
-        'z': z,
-        'text': text,
-        'fixedFontSize': fixedFontSize,
-        'fontFamily': fontFamily,
-        'bold': bold,
-        'italic': italic,
-        'underline': underline,
-        'textColor': textColor,
-        'backgroundOpacity': backgroundOpacity,
-        'backgroundColor': backgroundColor,
-        'align': align.index,
-        'vAlign': vAlign,
-        'styles': styles.map((e) => e.toMap()).toList(),
-        'translations': translations,
-        'imageOpacity': imageOpacity,
-        'imageUrl': imageUrl, // Storage URL
-        'borderRadius': borderRadius,
-        'isSelected': isSelected,
-      };
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'type': type,
+      'position': {'dx': position.dx, 'dy': position.dy},
+      'width': width,
+      'height': height,
+      'rotation': rotation,
+      'z': z,
+      'isSelected': isSelected,
+      // 🔑 sadece url yaz
+      'imageUrl': (imageUrl != null && imageUrl!.isNotEmpty) ? imageUrl : null,
+      'imageOpacity': imageOpacity,
+      
+      // metin
+      'text': text,
+      'fontFamily': fontFamily,
+      'fixedFontSize': fixedFontSize,
+      'textColor': textColor,
+      'backgroundColor': backgroundColor,
+      'backgroundOpacity': backgroundOpacity,
+      'borderRadius': borderRadius,
+      'bold': bold,
+      'italic': italic,
+      'underline': underline,
+      'align': align.index,
+      'vAlign': vAlign,
+      'styles': styles.map((e) => e.toMap()).toList(),
+      'translations': translations,
+    };
+  }
 
   static BoxItem fromMap(Map<String, dynamic> m) {
     final pos = m['position'] as Map<String, dynamic>? ?? {'dx': 100.0, 'dy': 100.0};
     final styleList = (m['styles'] as List?)?.cast<Map>() ?? const [];
+    
     return BoxItem(
       id: (m['id'] ?? '') as String,
       type: (m['type'] ?? 'textbox') as String,
@@ -211,6 +217,14 @@ class BoxItem {
       height: (m['height'] ?? 80.0).toDouble(),
       rotation: (m['rotation'] ?? 0.0).toDouble(),
       z: (m['z'] ?? 0) as int,
+      isSelected: (m['isSelected'] ?? false) as bool,
+
+      // 🔑 sadece url oku
+      imageUrl: (m['imageUrl'] ?? '') as String?,
+      imageOpacity: (m['imageOpacity'] ?? 1.0).toDouble(),
+      imageBytes: null, // hiçbir zaman Firestore’dan gelmez
+
+      // metin
       text: (m['text'] ?? '') as String,
       fixedFontSize: (m['fixedFontSize'] ?? 16.0).toDouble(),
       fontFamily: (m['fontFamily'] ?? 'Roboto') as String,
@@ -220,14 +234,11 @@ class BoxItem {
       textColor: (m['textColor'] ?? 0xFF000000) as int,
       backgroundOpacity: (m['backgroundOpacity'] ?? 1.0).toDouble(),
       backgroundColor: (m['backgroundColor'] ?? 0xFFFFFFFF) as int,
+      borderRadius: (m['borderRadius'] ?? 0.0).toDouble(),
       align: TextAlign.values[(m['align'] ?? TextAlign.left.index) as int],
       vAlign: (m['vAlign'] ?? 'top') as String,
       styles: styleList.map((e) => TextStyleSpan.fromMap(Map<String, dynamic>.from(e))).toList(),
       translations: Map<String, String>.from(m['translations'] ?? const {}),
-      imageOpacity: (m['imageOpacity'] ?? 1.0).toDouble(),
-      imageUrl: m['imageUrl'] as String?,
-      borderRadius: (m['borderRadius'] ?? 0.0).toDouble(),
-      isSelected: (m['isSelected'] ?? false) as bool,
     );
   }
 }

@@ -44,8 +44,6 @@ class _TextObjectState extends State<TextObject> {
 
   int _overTrashFrames = 0;
   Offset? _lastGlobalPoint;
-  late double _startW;
-  late double _startH;
   late double _startRot;
   late double _startFontSize;
 
@@ -54,8 +52,6 @@ class _TextObjectState extends State<TextObject> {
     if (!widget.box.isSelected) widget.onSelect(false);
     widget.onInteract?.call(true);
 
-    _startW = widget.box.width;
-    _startH = widget.box.height;
     _startRot = widget.box.rotation;
     _lastGlobalPoint = d.focalPoint;
     _startFontSize = widget.box.fixedFontSize;

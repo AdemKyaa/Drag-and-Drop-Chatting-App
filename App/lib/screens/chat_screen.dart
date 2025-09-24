@@ -1,4 +1,6 @@
 // lib/screens/chat_screen.dart
+// ignore_for_file: unnecessary_type_check
+
 import 'dart:math';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/material.dart';
@@ -11,7 +13,6 @@ import '../widgets/object/text_object.dart';
 import '../widgets/object/image_object.dart';
 import '../widgets/delete_area.dart';
 import '../widgets/panels/toolbar_panel.dart';
-import '../widgets/panels/image_edit_panel.dart';
 import '../services/translate_service.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -60,17 +61,6 @@ class _ChatScreenState extends State<ChatScreen> {
     return ro.localToGlobal(Offset.zero);
   }
 
-  bool _pointInsideBoxGlobal(BoxItem b, Offset global) {
-    // rotasyonu basitçe yok sayıyoruz (dikdörtgen testi yeterli)
-    final stageOrigin = _stageTopLeftGlobal();
-    final rect = Rect.fromLTWH(
-      stageOrigin.dx + b.position.dx,
-      stageOrigin.dy + b.position.dy,
-      b.width,
-      b.height,
-    );
-    return rect.contains(global);
-  }
 
   void _beginPinchFromObject(BoxItem b, int pointerId, Offset globalPos) {
     // Zaten başka obje ile pinch varsa yok say
@@ -198,21 +188,23 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
-    if (picked != null) {
-      final bytes = await picked.readAsBytes();
-      setState(() {
-        boxes.add(BoxItem(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          type: "image",
-          position: const Offset(150, 150),
-          width: 200,
-          height: 200,
-          imageBytes: bytes,
-          isSelected: true,
-        ));
-      });
-      _persistBoxes(); // Storage’a yükle & Firestore’a yaz
-    }
+    if (picked == null) return;
+
+    final bytes = await picked.readAsBytes();
+    final box = BoxItem(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      type: "image",
+      position: const Offset(150, 150),
+      width: 200,
+      height: 200,
+      imageBytes: bytes,
+      isSelected: true,
+    );
+
+    setState(() => boxes.add(box));
+
+    // 🔴 Tüm kutuları kaydetme! Sadece bu resmi kaydet:
+    await _saveBox(box);
   }
 
   // ==== Çeviri ====
@@ -239,16 +231,33 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _saveBox(BoxItem b) async {
-    if (b.type == 'image' && b.imageBytes != null && (b.imageUrl == null || b.imageUrl!.isEmpty)) {
-      final ref = _storage.ref().child('chats/${_chatId()}/images/${b.id}.bin');
-      await ref.putData(b.imageBytes!);
-      b.imageUrl = await ref.getDownloadURL();
+    debugPrint('[SAVE] start id=${b.id} type=${b.type} url=${b.imageUrl} hasBytes=${b.imageBytes != null}');
+
+    try {
+      if (b.type == 'image') {
+        if (b.imageBytes != null) {
+          final ref = _storage.ref().child('chats/${_chatId()}/images/${b.id}.jpg');
+          await ref.putData(b.imageBytes!, SettableMetadata(contentType: 'image/jpeg'));
+          final url = await ref.getDownloadURL();
+          b.imageUrl = url;
+          b.imageBytes = null;
+        }
+      }
+
+      final map = b.toMap();
+      debugPrint('[SAVE] toMap done for ${b.id} urlInMap=${map['imageUrl']}');
+
+      await _messagesCol.doc(b.id).set(map, SetOptions(merge: true));
+      debugPrint('[SAVE] firestore ok id=${b.id}');
+    } catch (e, st) {
+      debugPrint('[SAVE][ERR] $e');
+      debugPrint('$st');
     }
-    await _messagesCol.doc(b.id).set(b.toMap(), SetOptions(merge: true));
+
+    if (!mounted) return;
+    setState(() {});
   }
 
-
-  // Dil değiştiğinde görünümü güncelle & çeviri cache’lenmemişse üret
   Future<void> _setLang(String lang) async {
     setState(() => _targetLang = lang);
     // Eksik çevirileri üret
@@ -265,7 +274,6 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     setState(() {});
   }
-
     int _lineCount(BoxItem b, {double maxWidth = 2000}) {
       final style = GoogleFonts.getFont(
         b.fontFamily.isEmpty ? 'Roboto' : b.fontFamily,
@@ -356,8 +364,7 @@ class _ChatScreenState extends State<ChatScreen> {
               isEditing: _editingBox == b,
               onUpdate: () => setState(() {}),
               onSave: () async {
-                setState(() => _editingBox = null);
-                await _translateAndSaveFor(b);
+                await _saveBox(b);
               },
               onSelect: (edit) {
                 setState(() {
@@ -392,7 +399,9 @@ class _ChatScreenState extends State<ChatScreen> {
               box: b,
               isEditing: false,
               onUpdate: () => setState(() {}),
-              onSave: () => _saveBox(b),
+              onSave: () async {
+                await _saveBox(b);
+              },
               onSelect: (edit) {
                 setState(() {
                   for (final other in boxes) {
@@ -478,7 +487,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
                   final b = _pinchTarget!;
                   if (b.type == 'textbox') {
-                    final textSize = measureText(b, 2000);
+                    measureText(b, 2000);
                     final lineCount = _lineCount(b);
 
                     const padH = 32.0, padV = 24.0;
