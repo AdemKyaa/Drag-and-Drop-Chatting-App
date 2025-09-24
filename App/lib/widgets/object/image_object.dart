@@ -5,83 +5,84 @@ import '../object/handles/outlines.dart';
 import '../panels/image_edit_panel.dart';
 import '../object/handles/resize_handles.dart';
 
-class ImageObject extends StatefulWidget {
-  final BoxItem box;
-  final bool isEditing;
-  final VoidCallback onUpdate;
-  final VoidCallback onSave;
-  final void Function(bool edit) onSelect;
-  final VoidCallback onDelete;
-  final bool Function(Offset) isOverTrash;
-  final void Function(bool)? onDraggingOverTrash;
-  final void Function(bool)? onInteract;
-  final void Function(BoxItem box, int pointerId, Offset globalPos)? onPrimaryPointerDown;
+  class ImageObject extends StatefulWidget {
+    final BoxItem box;
+    final bool isEditing;
+    final VoidCallback onUpdate;
+    final VoidCallback onSave;
+    final void Function(bool edit) onSelect;
+    final VoidCallback onDelete;
+    final bool Function(Offset) isOverTrash;
+    final void Function(bool)? onDraggingOverTrash;
+    final void Function(bool)? onInteract;
+    final void Function(BoxItem box, int pointerId, Offset globalPos)? onPrimaryPointerDown;
+    final VoidCallback? onBringToFront;
+    final VoidCallback? onSendToBack;
 
-  const ImageObject({
-    super.key,
-    required this.box,
-    required this.isEditing,
-    required this.onUpdate,
-    required this.onSave,
-    required this.onSelect,
-    required this.onDelete,
-    required this.isOverTrash,
-    this.onDraggingOverTrash,
-    this.onInteract,
-    this.onPrimaryPointerDown,
-  });
+    const ImageObject({
+      super.key,
+      required this.box,
+      required this.isEditing,
+      required this.onUpdate,
+      required this.onSave,
+      required this.onSelect,
+      required this.onDelete,
+      required this.isOverTrash,
+      this.onDraggingOverTrash,
+      this.onInteract,
+      this.onPrimaryPointerDown,
+      this.onBringToFront,
+      this.onSendToBack,
+    });
 
-  @override
-  State<ImageObject> createState() => _ImageObjectState();
-}
-
-class _ImageObjectState extends State<ImageObject> {
-  static const double _toolbarH = 48;
-
-  int _overTrashFrames = 0;
-  Offset? _lastGlobalPoint;
-  late double _startW, _startH, _startRot;
-
-  void _onScaleStart(ScaleStartDetails d) {
-    if (!widget.box.isSelected) widget.onSelect(false);
-    widget.onInteract?.call(true);
-
-    final b = widget.box;
-    _startW = b.width;
-    _startH = b.height;
-    _startRot = b.rotation;
-    _lastGlobalPoint = d.focalPoint;
+    @override
+    State<ImageObject> createState() => _ImageObjectState();
   }
+
+  class _ImageObjectState extends State<ImageObject> {
+    static const double _toolbarH = 48;
+
+    int _overTrashFrames = 0;
+    Offset? _lastGlobalPoint;
+    late double _startW, _startH, _startRot;
+
+    void _onScaleStart(ScaleStartDetails d) {
+      if (!widget.box.isSelected) widget.onSelect(false);
+      widget.onInteract?.call(true);
+
+      final b = widget.box;
+      _startW = b.width;
+      _startH = b.height;
+      _startRot = b.rotation;
+      _lastGlobalPoint = d.focalPoint;
+    }
 
   void _onScaleUpdate(ScaleUpdateDetails d) {
     final b = widget.box;
 
-    // Tek parmak → sürükleme (rotasyona göre yerel eksende taşı)
     if (d.pointerCount == 1) {
+      // Tek parmak → sürükleme
       if (d.focalPointDelta.distanceSquared >= 0.25) {
         final dx = d.focalPointDelta.dx;
         final dy = d.focalPointDelta.dy;
+
+        // açılı objelerde kaymayı doğru hesapla
         final angle = -(_startRot + d.rotation);
-        final localDx = dx * cos(angle) + dy * sin(angle);
-        final localDy = -(dx * sin(angle) - dy * cos(angle));
-        b.position += Offset(localDx, localDy);
+        final rotatedDx = dx * cos(angle) + dy * sin(angle);
+        final rotatedDy = -(dx * sin(angle) - dy * cos(angle));
+
+        b.position += Offset(rotatedDx, rotatedDy);
       }
     }
 
-    // İki parmak → boyut + açı
     if (d.pointerCount >= 2) {
-      if (d.scale > 0) {
-        b.width  = (_startW * d.scale).clamp(32.0, 4096.0);
-        b.height = (_startH * d.scale).clamp(32.0, 4096.0);
-      }
+      // Çift parmak → ölçek + rotate
+      final newW = (_startW * d.scale).clamp(40.0, 4096.0);
+      final newH = (_startH * d.scale).clamp(40.0, 4096.0);
+      b.width = newW;
+      b.height = newH;
       b.rotation = _startRot + d.rotation;
     }
-
-    _lastGlobalPoint = d.focalPoint;
-
-    // Çöp alanı highlight
-    final over = _lastGlobalPoint != null && widget.isOverTrash(_lastGlobalPoint!);
-    widget.onDraggingOverTrash?.call(over);
 
     widget.onUpdate();
   }
@@ -115,7 +116,7 @@ class _ImageObjectState extends State<ImageObject> {
             widget.onPrimaryPointerDown?.call(widget.box, e.pointer, e.position);
           },
           child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
+            behavior: HitTestBehavior.translucent,
             onScaleStart: _onScaleStart,
             onScaleUpdate: _onScaleUpdate,
             onScaleEnd: _onScaleEnd,
@@ -129,6 +130,8 @@ class _ImageObjectState extends State<ImageObject> {
                   box: b,
                   onUpdate: widget.onUpdate,
                   onSave: widget.onSave,
+                  onBringToFront: widget.onBringToFront,
+                  onSendToBack: widget.onSendToBack,
                 ),
               );
             },

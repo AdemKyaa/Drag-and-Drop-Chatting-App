@@ -387,41 +387,50 @@ class _ChatScreenState extends State<ChatScreen> {
                 _beginPinchFromObject(box, pid, globalPos);
               },
             );
-          }else if (b.type == "image") {
-              return GestureDetector(
-                onDoubleTap: () async {
-                  await showModalBottomSheet(
-                    context: context,
-                    builder: (_) => ImageEditPanel(
-                      box: b,
-                      onUpdate: () => setState(() {}),
-                      onSave: _persistBoxes,
-                    ),
-                  );
-                },
-                child: ImageObject(
-                  box: b,
-                  isEditing: false,
-                  onUpdate: () => setState(() {}),
-                  onSave: _persistBoxes,
-                  onSelect: (edit) {
-                    setState(() {
-                      for (var other in boxes) {
-                        other.isSelected = false;
-                      }
-                      b.isSelected = true;
-                    });
-                  },
-                  onDelete: () async {
-                    setState(() => boxes.remove(b));
-                    await _messagesCol.doc(b.id).delete();
-                  },
-                  isOverTrash: _pointOverTrash,
-                  onDraggingOverTrash: (v) => setState(() => _isOverTrash = v),
-                  onInteract: (_) {},
-                ),
-              );
-            }
+          } else if (b.type == "image") {
+            return ImageObject(
+              box: b,
+              isEditing: false,
+              onUpdate: () => setState(() {}),
+              onSave: () => _saveBox(b),
+              onSelect: (edit) {
+                setState(() {
+                  for (final other in boxes) {
+                    other.isSelected = false;
+                  }
+                  b.isSelected = true;
+                });
+              },
+              onDelete: () async {
+                setState(() => boxes.remove(b));
+                await _messagesCol.doc(b.id).delete();
+              },
+              isOverTrash: _pointOverTrash,
+              onDraggingOverTrash: (v) => setState(() => _isOverTrash = v),
+              onInteract: (_) {},
+
+              onPrimaryPointerDown: (box, pid, globalPos) {
+                _beginPinchFromObject(box, pid, globalPos);
+              },
+
+              onBringToFront: () {
+                setState(() {
+                  final values = boxes.map((e) => (e.z is num) ? (e.z as num).toDouble() : 0.0);
+                  final maxZ = values.isEmpty ? 0.0 : values.reduce((a, c) => a > c ? a : c);
+                  b.z = (maxZ + 1) as int;
+                });
+                _saveBox(b);
+              },
+              onSendToBack: () {
+                setState(() {
+                  final values = boxes.map((e) => (e.z is num) ? (e.z as num).toDouble() : 0.0);
+                  final minZ = values.isEmpty ? 0.0 : values.reduce((a, c) => a < c ? a : c);
+                  b.z = (minZ - 1) as int;
+                });
+                _saveBox(b);
+              },
+            );
+          }
             return const SizedBox.shrink();
           }),
 
@@ -468,23 +477,24 @@ class _ChatScreenState extends State<ChatScreen> {
                   final deltaAng = ang - _pinchStartAngle;
 
                   final b = _pinchTarget!;
-                  final textSize = measureText(b, 2000);
-                  // satır sayısı
-                  final lineCount = _lineCount(b);
+                  if (b.type == 'textbox') {
+                    final textSize = measureText(b, 2000);
+                    final lineCount = _lineCount(b);
 
-                  // padding değerleri (TextObject’tekiyle aynı)
-                  const padH = 32.0;
-                  const padV = 24.0;
+                    const padH = 32.0, padV = 24.0;
 
-                  // scale edilmiş font
-                  b.fixedFontSize = (_pinchStartFont * scale).clamp(8.0, 300.0);
+                    b.fixedFontSize = (_pinchStartFont * scale).clamp(8.0, 300.0);
 
-                  // metin ölçümü yeniden yapılmalı çünkü font değişti
-                  final scaledTextSize = measureText(b, 2000);
+                    final scaledTextSize = measureText(b, 2000);
 
-                  b.width = (scaledTextSize.width + padH).clamp(24.0, 4096.0);
-                  b.height = (lineCount * b.fixedFontSize * 1.2 + padV).clamp(24.0, 4096.0);
-                  b.rotation = _pinchStartRot + deltaAng;
+                    b.width = (scaledTextSize.width + padH).clamp(24.0, 4096.0);
+                    b.height = (lineCount * b.fixedFontSize * 1.2 + padV).clamp(24.0, 4096.0);
+                    b.rotation = _pinchStartRot + deltaAng;
+                  } else if (b.type == 'image') {
+                    b.width  = (_pinchStartW * scale).clamp(32.0, 4096.0);
+                    b.height = (_pinchStartH * scale).clamp(32.0, 4096.0);
+                    b.rotation = _pinchStartRot + deltaAng;
+                  }
 
                   setState(() {}); // anlık yansıt
                 }

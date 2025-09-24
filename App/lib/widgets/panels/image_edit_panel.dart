@@ -6,12 +6,16 @@ class ImageEditPanel extends StatefulWidget {
   final BoxItem box;
   final VoidCallback onUpdate;
   final VoidCallback onSave;
+  final VoidCallback? onBringToFront;
+  final VoidCallback? onSendToBack;
 
   const ImageEditPanel({
     super.key,
     required this.box,
     required this.onUpdate,
     required this.onSave,
+    this.onBringToFront,
+    this.onSendToBack,
   });
 
   @override
@@ -19,6 +23,14 @@ class ImageEditPanel extends StatefulWidget {
 }
 
 class _ImageEditPanelState extends State<ImageEditPanel> {
+  late BoxItem b;
+
+  @override
+  void initState() {
+    super.initState();
+    b = widget.box; // 'b' undefined hataları böyle biter
+  }
+  
   @override
   Widget build(BuildContext context) {
     final b = widget.box;
@@ -68,6 +80,27 @@ class _ImageEditPanelState extends State<ImageEditPanel> {
                 ),
               ),
             ],
+          ),
+          Expanded(
+            child: OutlinedButton(
+              onPressed: () {
+                widget.box.z = 999999; // en üste
+                widget.onUpdate();
+                widget.onSave();
+              },
+              child: const Text("En Üste Al"),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: OutlinedButton(
+              onPressed: () {
+                widget.box.z = -999999; // en alta
+                widget.onUpdate();
+                widget.onSave();
+              },
+              child: const Text("En Alta Al"),
+            ),
           ),
         ],
       ),
