@@ -1,6 +1,6 @@
 // lib/screens/chat_screen.dart
 import 'dart:math';
-
+import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -267,9 +267,9 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
     int _lineCount(BoxItem b, {double maxWidth = 2000}) {
-      final style = TextStyle(
-        fontSize: b.fixedFontSize,
-        fontFamily: b.fontFamily.isEmpty ? "Roboto" : b.fontFamily,
+      final style = GoogleFonts.getFont(
+        b.fontFamily.isEmpty ? 'Roboto' : b.fontFamily,
+        textStyle: TextStyle(fontSize: b.fixedFontSize),
       );
 
       final span = TextSpan(style: style, children: b.styledSpans(style));
@@ -284,12 +284,15 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
   Size measureText(BoxItem b, double maxWidth) {
-    final baseStyle = TextStyle(
-      fontSize: b.fixedFontSize,
-      fontFamily: b.fontFamily.isEmpty ? "Roboto" : b.fontFamily,
-      fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
-      fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
-      decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+    final baseStyle = GoogleFonts.getFont(
+      b.fontFamily.isEmpty ? 'Roboto' : b.fontFamily,
+      textStyle: TextStyle(
+        fontSize: b.fixedFontSize,
+        fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
+        fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
+        decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+        color: Color(b.textColor),
+      ),
     );
 
     final tp = TextPainter(

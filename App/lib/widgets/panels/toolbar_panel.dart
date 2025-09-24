@@ -136,7 +136,7 @@ class _ToolbarPanelState extends State<ToolbarPanel> {
           Positioned.fill(
             child: GestureDetector(
               onTap: () { widget.onSave(); widget.onClose(); },
-              child: Container(color: Colors.black54),
+              child: Container(color: Colors.black87),
             ),
           ),
 

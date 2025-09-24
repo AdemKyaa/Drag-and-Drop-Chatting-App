@@ -1,5 +1,5 @@
 import 'dart:math';
-
+import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/material.dart';
 import '../../models/box_item.dart';
 import '../panels/text_edit_panel.dart';
@@ -62,12 +62,18 @@ class _TextObjectState extends State<TextObject> {
   }
 
   Size _measureText(BoxItem b, {double maxWidth = 2000}) {
-    final baseStyle = TextStyle(
-      fontSize: b.fixedFontSize,
-      fontFamily: b.fontFamily.isEmpty ? "Roboto" : b.fontFamily,
-      fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
-      fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
-      decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+    final baseStyle = GoogleFonts.getFont(
+      b.fontFamily.isEmpty ? 'Roboto' : b.fontFamily,
+      textStyle: GoogleFonts.getFont(
+        b.fontFamily.isEmpty ? 'Roboto' : b.fontFamily,
+        textStyle: TextStyle(
+          fontSize: b.fixedFontSize,
+          fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
+          fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
+          decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+          color: Color(b.textColor),
+        ),
+      )
     );
 
     final span = TextSpan(
@@ -86,9 +92,9 @@ class _TextObjectState extends State<TextObject> {
   }
 
   int _lineCount(BoxItem b, {double maxWidth = 2000}) {
-    final style = TextStyle(
-      fontSize: b.fixedFontSize,
-      fontFamily: b.fontFamily.isEmpty ? "Roboto" : b.fontFamily,
+    final style = GoogleFonts.getFont(
+      b.fontFamily.isEmpty ? 'Roboto' : b.fontFamily,
+      textStyle: TextStyle(fontSize: b.fixedFontSize),
     );
 
     final span = TextSpan(style: style, children: b.styledSpans(style));
@@ -164,38 +170,38 @@ class _TextObjectState extends State<TextObject> {
   // === Content ===
   Widget _buildContent(BoxItem b) {
     _recalcBoxSize(b);
-
     b.textFor(widget.displayLang);
+
+    final baseStyle = GoogleFonts.getFont(
+      b.fontFamily.isEmpty ? "Roboto" : b.fontFamily,
+      textStyle: TextStyle(
+        fontSize: b.fixedFontSize,
+        fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
+        fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
+        decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+        color: Color(b.textColor),
+      ),
+    );
 
     return RichText(
       textAlign: b.align,
       text: TextSpan(
-        style: TextStyle(
-          fontSize: b.fixedFontSize,
-          fontFamily: b.fontFamily.isEmpty ? "Roboto" : b.fontFamily,
-          fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
-          fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
-          decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
-          color: Color(b.textColor),
-        ),
-        children: b.styledSpans(
-          TextStyle(
-            fontSize: b.fixedFontSize,
-            fontFamily: b.fontFamily.isEmpty ? "Roboto" : b.fontFamily,
-            color: Color(b.textColor),
-          ),
-        ),
+        style: baseStyle,
+        children: b.styledSpans(baseStyle),
       ),
     );
   }
 
   void _recalcBoxSize(BoxItem b) {
-    final baseStyle = TextStyle(
-      fontSize: b.fixedFontSize,
-      fontFamily: b.fontFamily.isEmpty ? "Roboto" : b.fontFamily,
-      fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
-      fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
-      decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+    final baseStyle = GoogleFonts.getFont(
+      b.fontFamily.isEmpty ? 'Roboto' : b.fontFamily,
+      textStyle: TextStyle(
+        fontSize: b.fixedFontSize,
+        fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
+        fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
+        decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+        color: Color(b.textColor),
+      ),
     );
 
     final span = TextSpan(
