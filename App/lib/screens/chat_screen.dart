@@ -13,7 +13,6 @@ import '../widgets/object/text_object.dart';
 import '../widgets/object/image_object.dart';
 import '../widgets/delete_area.dart';
 import '../widgets/panels/toolbar_panel.dart';
-import '../services/translate_service.dart';
 
 class ChatScreen extends StatefulWidget {
   final String currentUserId;
@@ -106,12 +105,6 @@ class _ChatScreenState extends State<ChatScreen> {
   // Firestore/Storage referansları
   late final FirebaseFirestore _db;
   late final FirebaseStorage _storage;
-
-  // LibreTranslate
-  final _translator = TranslateService(
-    baseUrl: 'https://libretranslate.com', // kendi endpoint’iniz varsa değiştirin
-    apiKey: null,
-  );
 
   late final CollectionReference _messagesCol;
 
@@ -231,12 +224,6 @@ class _ChatScreenState extends State<ChatScreen> {
     final srcText = b.text.trim();
     if (srcText.isEmpty) return;
 
-    final translated = await _translator.translate(
-      text: srcText,
-      source: 'auto',
-      target: _targetLang,
-    );
-    b.setTranslation(_targetLang, translated);
     await _saveBox(b);
     setState(() {}); // yansıt
   }
@@ -284,9 +271,6 @@ class _ChatScreenState extends State<ChatScreen> {
       if (b.type == 'textbox') {
         final exists = (b.translations[lang]?.trim().isNotEmpty ?? false);
         if (!exists && b.text.trim().isNotEmpty) {
-          // lazımsa çevir
-          final t = await _translator.translate(text: b.text, source: 'auto', target: lang);
-          b.setTranslation(lang, t);
           await _saveBox(b);
         }
       }
