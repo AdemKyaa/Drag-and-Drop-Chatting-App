@@ -6,6 +6,8 @@ class EmojiEditPanel extends StatelessWidget {
   final VoidCallback onUpdate;
   final VoidCallback onSave;
   final VoidCallback onClose;
+  final VoidCallback onBringToFront;
+  final VoidCallback onSendToBack;
 
   const EmojiEditPanel({
     super.key,
@@ -13,92 +15,39 @@ class EmojiEditPanel extends StatelessWidget {
     required this.onUpdate,
     required this.onSave,
     required this.onClose,
+    required this.onBringToFront,
+    required this.onSendToBack,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      color: Colors.black54,
       padding: const EdgeInsets.all(12),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.grey)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
         children: [
-          // Boyut ayarı
-          Row(
-            children: [
-              const Text("Size"),
-              Expanded(
-                child: Slider(
-                  min: 16,
-                  max: 200,
-                  value: box.fontSize,
-                  onChanged: (v) {
-                    box.fontSize = v;
-                    onUpdate();
-                  },
-                  onChangeEnd: (_) => onSave(),
-                ),
-              ),
-              Text("${box.fontSize.toInt()}"),
-            ],
-          ),
-
-          // Opacity ayarı
-          Row(
-            children: [
-              const Text("Opacity"),
-              Expanded(
-                child: Slider(
-                  min: 0.1,
-                  max: 1.0,
-                  divisions: 9,
-                  value: box.opacity,
-                  onChanged: (v) {
-                    box.opacity = v;
-                    onUpdate();
-                  },
-                  onChangeEnd: (_) => onSave(),
-                ),
-              ),
-              Text("${(box.opacity * 100).toInt()}%"),
-            ],
-          ),
-
-          // Katman kontrolü
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              ElevatedButton(
-                onPressed: () {
-                  box.z += 1; // en üste taşı
-                  onUpdate();
-                  onSave();
-                },
-                child: const Text("Bring Front"),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  box.z -= 1; // en alta gönder
-                  onUpdate();
-                  onSave();
-                },
-                child: const Text("Send Back"),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 8),
-
-          // Panel kapatma butonu
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: onClose,
-              child: const Text("Close"),
+          const Text("Opacity", style: TextStyle(color: Colors.white)),
+          Expanded(
+            child: Slider(
+              value: box.opacity,
+              min: 0.0,
+              max: 1.0,
+              divisions: null, // ✅ ara kilit noktası yok
+              onChanged: (val) {
+                box.opacity = val;
+                onUpdate();
+              },
             ),
+          ),
+          IconButton(
+            tooltip: "En üste al",
+            icon: const Icon(Icons.vertical_align_top, color: Colors.white),
+            onPressed: onBringToFront,
+          ),
+          IconButton(
+            tooltip: "En alta al",
+            icon: const Icon(Icons.vertical_align_bottom, color: Colors.white),
+            onPressed: onSendToBack,
           ),
         ],
       ),

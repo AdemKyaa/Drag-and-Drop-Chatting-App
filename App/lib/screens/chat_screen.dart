@@ -222,10 +222,19 @@ class _ChatScreenState extends State<ChatScreen> {
     showModalBottomSheet(
       context: context,
       builder: (context) {
-        final emojis = ["😀", "😂", "😍", "😎", "😭", "🔥", "👍", "❤️"];
-        return GridView.count(
-          crossAxisCount: 6,
-          children: emojis.map((e) {
+        final emojis = [
+          "😀","😁","😂","🤣","😃","😄","😅","😆","😉","😊","😍","😘","😜","🤔",
+          "😎","😭","😡","🤯","👍","👎","🙏","👏","🙌","🔥","❤️","💔","✨","🌟",
+          "🌈","🎉","🎂","⚽","🏀","🎮","🎵","🚗","✈️","🏠","💡","📱","💻","🖥️"
+        ]; // istediğin kadar ekleyebilirsin
+
+        return GridView.builder(
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 6,
+          ),
+          itemCount: emojis.length,
+          itemBuilder: (context, index) {
+            final e = emojis[index];
             return InkWell(
               onTap: () {
                 Navigator.pop(context);
@@ -233,7 +242,7 @@ class _ChatScreenState extends State<ChatScreen> {
               },
               child: Center(child: Text(e, style: const TextStyle(fontSize: 28))),
             );
-          }).toList(),
+          },
         );
       },
     );
@@ -518,15 +527,29 @@ class _ChatScreenState extends State<ChatScreen> {
           }else if (b.type == "emoji") {
             return ResizableEmojiBox(
               box: b,
-              isEditing: false,
+              isEditing: _editingBox == b,
               onUpdate: () => setState(() {}),
               onSave: () async => _saveBox(b),
-              onSelect: (_) {},
+              onSelect: (edit) {
+                setState(() {
+                  for (final other in boxes) {
+                    other.isSelected = false;
+                  }
+                  b.isSelected = true;
+
+                  if (edit) {
+                    _editingBox = b; // ✅ çift tık → edit panel açılır
+                  } else {
+                    _editingBox = null;
+                  }
+                });
+              },
               onDelete: () async {
                 setState(() => boxes.remove(b));
                 await _messagesCol.doc(b.id).delete();
               },
-              isOverTrash: (_) => false,
+              isOverTrash: _pointOverTrash, // ✅ gerçek kontrol
+              onDraggingOverTrash: (v) => setState(() => _isOverTrash = v),
             );
           }
             return const SizedBox.shrink();
@@ -592,8 +615,10 @@ class _ChatScreenState extends State<ChatScreen> {
                     b.width  = (_pinchStartW * scale).clamp(32.0, 4096.0);
                     b.height = (_pinchStartH * scale).clamp(32.0, 4096.0);
                     b.rotation = _pinchStartRot + deltaAng;
+                  }else if (b.type == 'emoji') {
+                    b.fontSize = (_pinchStartFont * scale).clamp(16.0, 300.0);
+                    b.rotation = _pinchStartRot + deltaAng;
                   }
-
                   setState(() {}); // anlık yansıt
                 }
               },
@@ -677,6 +702,24 @@ class _ChatScreenState extends State<ChatScreen> {
                   await _saveBox(b);
                 },
                 onClose: () => setState(() => _editingBox = null),
+                onBringToFront: () {
+                  setState(() {
+                    final values = boxes.map((e) => (e.z is num) ? (e.z as num).toDouble() : 0.0);
+                    final maxZ = values.isEmpty ? 0.0 : values.reduce((a, c) => a > c ? a : c);
+                    _editingBox!.z = (maxZ + 1).toInt();
+                    boxes.sort((a, b) => a.z.compareTo(b.z));
+                  });
+                  _saveBox(_editingBox!);
+                },
+                onSendToBack: () {
+                  setState(() {
+                    final values = boxes.map((e) => (e.z is num) ? (e.z as num).toDouble() : 0.0);
+                    final minZ = values.isEmpty ? 0.0 : values.reduce((a, c) => a < c ? a : c);
+                    _editingBox!.z = (minZ - 1).toInt();
+                    boxes.sort((a, b) => a.z.compareTo(b.z));
+                  });
+                  _saveBox(_editingBox!);
+                },
               ),
             )
         ],
