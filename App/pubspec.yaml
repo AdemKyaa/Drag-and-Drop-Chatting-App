@@ -10,32 +10,17 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-
-  # bcrypt hashing için
+  cupertino_icons: ^1.0.2
   bcrypt: ^1.1.3
-
-  # Firebase core
   firebase_core: ^3.6.0
-
-  # Firebase Authentication (eğer login/register kullanıyorsan)
   firebase_auth: ^5.3.1
-
-  # Cloud Firestore
   cloud_firestore: ^5.4.4
-
-  # Firebase Storage (resimler için)
   firebase_storage: ^12.3.4
-
-  # Galeriden fotoğraf seçmek için
   image_picker: ^1.1.2
   image: ^4.2.0
   flutter_colorpicker: ^1.0.3
-
   google_fonts: ^6.2.1
   http: ^1.2.2
-
-  # UI için ekstra paketler (opsiyonel)
-  cupertino_icons: ^1.0.8
 
 dev_dependencies:
   flutter_test:

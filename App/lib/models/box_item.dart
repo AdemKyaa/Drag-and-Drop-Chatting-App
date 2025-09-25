@@ -61,6 +61,8 @@ class BoxItem {
 
   // text
   String text;
+  double fontSize;
+  double opacity;
   double fixedFontSize;
   String fontFamily;
   bool bold;
@@ -98,6 +100,8 @@ class BoxItem {
     this.isSelected = false,
     this.imageUrl,
     this.text = "",
+    this.fontSize = 48,
+    this.opacity = 1.0,
     this.fixedFontSize = 16,
     this.fontFamily = "Roboto",
     this.bold = false,

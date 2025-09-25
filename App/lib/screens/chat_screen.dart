@@ -1,6 +1,3 @@
-// lib/screens/chat_screen.dart
-// ignore_for_file: unnecessary_type_check
-
 import 'dart:math';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/material.dart';
@@ -13,6 +10,8 @@ import '../widgets/object/text_object.dart';
 import '../widgets/object/image_object.dart';
 import '../widgets/delete_area.dart';
 import '../widgets/panels/toolbar_panel.dart';
+import '../widgets/panels/emoji_edit_panel.dart';
+import '../widgets/object/resizable_emoji_box.dart';
 
 class ChatScreen extends StatefulWidget {
   final String currentUserId;
@@ -59,7 +58,6 @@ class _ChatScreenState extends State<ChatScreen> {
     if (ro == null) return Offset.zero;
     return ro.localToGlobal(Offset.zero);
   }
-
 
   void _beginPinchFromObject(BoxItem b, int pointerId, Offset globalPos) {
     // Zaten başka obje ile pinch varsa yok say
@@ -220,6 +218,39 @@ class _ChatScreenState extends State<ChatScreen> {
     await _saveBox(box);
   }
 
+  void _openEmojiSheet() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        final emojis = ["😀", "😂", "😍", "😎", "😭", "🔥", "👍", "❤️"];
+        return GridView.count(
+          crossAxisCount: 6,
+          children: emojis.map((e) {
+            return InkWell(
+              onTap: () {
+                Navigator.pop(context);
+                _addEmoji(e);
+              },
+              child: Center(child: Text(e, style: const TextStyle(fontSize: 28))),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  void _addEmoji(String emoji) {
+    final newBox = BoxItem(
+      id: DateTime.now().toIso8601String(),
+      type: "emoji",
+      text: emoji,
+      fontSize: 64,
+      opacity: 1.0,
+    );
+    setState(() => boxes.add(newBox));
+    _saveBox(newBox);
+  }
+
   // ==== Çeviri ====
   Future<void> _translateAndSaveFor(BoxItem b) async {
     if (b.type != 'textbox') return;
@@ -334,7 +365,7 @@ class _ChatScreenState extends State<ChatScreen> {
       appBar: AppBar(
         title: Text(widget.otherUsername ?? "Chat"),
         actions: [
-          // Dil seçimi
+          // Dil seçimi menüsü
           PopupMenuButton<String>(
             icon: const Icon(Icons.translate),
             onSelected: (v) => _setLang(v),
@@ -343,13 +374,23 @@ class _ChatScreenState extends State<ChatScreen> {
               PopupMenuItem(value: 'en', child: Text('English')),
             ],
           ),
+
+          // Text ekleme
           IconButton(
             icon: const Icon(Icons.text_fields),
             onPressed: _addTextBox,
           ),
+
+          // Resim ekleme
           IconButton(
             icon: const Icon(Icons.image),
             onPressed: _pickImage,
+          ),
+
+          // Emoji ekleme (yeni)
+          IconButton(
+            icon: const Icon(Icons.emoji_emotions),
+            onPressed: _openEmojiSheet,
           ),
         ],
       ),
@@ -473,6 +514,19 @@ class _ChatScreenState extends State<ChatScreen> {
                 });
                 _saveBox(b);
               },
+            );
+          }else if (b.type == "emoji") {
+            return ResizableEmojiBox(
+              box: b,
+              isEditing: false,
+              onUpdate: () => setState(() {}),
+              onSave: () async => _saveBox(b),
+              onSelect: (_) {},
+              onDelete: () async {
+                setState(() => boxes.remove(b));
+                await _messagesCol.doc(b.id).delete();
+              },
+              isOverTrash: (_) => false,
             );
           }
             return const SizedBox.shrink();
@@ -608,7 +662,23 @@ class _ChatScreenState extends State<ChatScreen> {
                 },
                 onClose: () => setState(() => _editingBox = null),
               ),
-            ),
+            )
+          else if (_editingBox != null && _editingBox!.type == "emoji")
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: EmojiEditPanel(
+                box: _editingBox!,
+                onUpdate: () => setState(() {}),
+                onSave: () async {
+                  final b = _editingBox!;
+                  setState(() => _editingBox = null);
+                  await _saveBox(b);
+                },
+                onClose: () => setState(() => _editingBox = null),
+              ),
+            )
         ],
       ),
     );
