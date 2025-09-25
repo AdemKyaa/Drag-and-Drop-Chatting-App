@@ -78,8 +78,9 @@ class BoxItem {
 
   // image
   Uint8List? imageBytes; // runtime only
-  double imageOpacity;
   String? imageUrl; // Storage URL
+  String? mimeType;
+  double imageOpacity;
 
   // border
   double borderRadius;
@@ -110,6 +111,7 @@ class BoxItem {
     List<TextStyleSpan>? styles,
     this.translations = const {},
     this.imageBytes,
+    this.mimeType,
     this.imageOpacity = 1,
     this.borderRadius = 0,
     this.z = 0,

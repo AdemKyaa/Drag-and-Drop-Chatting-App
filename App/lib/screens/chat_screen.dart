@@ -184,6 +184,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (picked == null) return;
 
     final bytes = await picked.readAsBytes();
+    final mimeType = picked.mimeType ?? 'image/jpeg';
 
     // ÇÖZÜM: Resmin orijinal boyutlarını al ve oranını koru
     var decodedImage = await decodeImageFromList(bytes);
@@ -210,6 +211,7 @@ class _ChatScreenState extends State<ChatScreen> {
       width: newWidth,
       height: newHeight,
       imageBytes: bytes,
+      mimeType: mimeType,
       isSelected: true,
     );
 
@@ -239,25 +241,35 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       if (b.type == 'image') {
         if ((b.imageUrl == null || b.imageUrl!.isEmpty) && b.imageBytes != null) {
-          debugPrint("Resim yükleniyor...");
-          final ref = _storage.ref().child('${_chatId()}/${b.id}.jpg');
+          final mimeType = b.mimeType ?? 'image/jpeg';
+
+          String ext = 'jpg';
+          if (mimeType.contains('png')) ext = 'png';
+          else if (mimeType.contains('gif')) ext = 'gif';
+          else if (mimeType.contains('webp')) ext = 'webp';
+
+          final ref = _storage.ref().child('${_chatId()}/${b.id}.$ext');
+
           await ref.putData(
             b.imageBytes!,
-            SettableMetadata(contentType: 'image/jpeg'),
+            SettableMetadata(contentType: mimeType),
           );
-          b.imageUrl = null;
-          b.imageBytes = null; // Yüklendikten sonra byte'ları temizle
-          debugPrint("Resim yüklendi, URL: ${b.imageUrl}");
+
+          b.imageUrl = await ref.getDownloadURL();
+          b.imageBytes = null;
+
+          debugPrint("✅ Resim yüklendi, URL: ${b.imageUrl}");
         }
       }
 
+      if (b.imageUrl == null && b.type == 'image') {
+        debugPrint("⚠️ Uyarı: imageUrl boş kaldı! Bu object-not-found sebebi olabilir.");
+      }
+
       await _messagesCol.doc(b.id).set(b.toMap(), SetOptions(merge: true));
-      debugPrint("${b.id} ID'li nesne kaydedildi.");
-      if (!mounted) return;
-      setState(() {});
+      debugPrint("📥 ${b.id} Firestore’a kaydedildi.");
     } catch (e) {
-      debugPrint("HATA! _saveBox başarısız: $e");
-      // Kullanıcıya bir hata mesajı göstermek için
+      debugPrint("❌ HATA! _saveBox başarısız: $e");
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Kaydetme hatası: $e")),
       );
