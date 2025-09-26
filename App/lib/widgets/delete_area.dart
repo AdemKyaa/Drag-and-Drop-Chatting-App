@@ -18,12 +18,12 @@ class DeleteArea extends StatelessWidget {
 
     return AnimatedScale(
       scale: isActive ? 1.3 : 1.0, // üzerine gelince büyüsün
-      duration: const Duration(milliseconds: 200),
+      duration: const Duration(milliseconds: 50),
       child: Container(
         width: 64,
         height: 64,
         decoration: BoxDecoration(
-          color: isActive ? base.withOpacity(0.2) : base.withOpacity(0.1),
+          color: isActive ? const Color.fromARGB(50, 244, 67, 54) : const Color.fromARGB(50, 244, 67, 54),
           shape: BoxShape.circle,
         ),
         child: const Icon(Icons.delete, color: base, size: 32),

@@ -89,11 +89,8 @@ class _ResizableImageBoxState extends State<ResizableImageBox> {
         },
         onPanUpdate: (details) {
           _updatePosition(details.delta);
-          if (widget.isOverTrash(details.globalPosition)) {
-            widget.onDraggingOverTrash?.call(true);
-          } else {
-            widget.onDraggingOverTrash?.call(false);
-          }
+          final overTrash = widget.isOverTrash(details.globalPosition);
+          widget.onDraggingOverTrash?.call(overTrash);
         },
         onPanEnd: (_) {
           setState(() => dragging = false);

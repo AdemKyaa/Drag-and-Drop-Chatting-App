@@ -555,9 +555,11 @@ class _ChatScreenState extends State<ChatScreen> {
                       });
                     },
                     onDelete: () async {
+                      // ✅ direkt silme işlemi
                       setState(() => boxes.remove(b));
                       await _messagesCol.doc(b.id).delete();
                     },
+                    onInteract: (_) {},
                     isOverTrash: _pointOverTrash,
                     onDraggingOverTrash: (v) => setState(() => _isOverTrash = v),
                     onPrimaryPointerDown: (box, pid, globalPos) {

@@ -851,18 +851,6 @@ Widget build(BuildContext context) {
     top: b.position.dy,
     child: GestureDetector(
       onTap: () => widget.onSelect(true),
-      onLongPress: () {
-        setState(() {
-          b.isSelected = true;
-          b.scale = 1.2;       // 🔍 büyütme efekti
-          b.showDelete = true; // 🗑️ silme butonu
-        });
-      },
-      onLongPressEnd: (_) {
-        setState(() {
-          b.scale = 1.0; // normale dön
-        });
-      },
       onPanStart: (_) {
         widget.onInteract?.call(true);
       },
@@ -870,22 +858,26 @@ Widget build(BuildContext context) {
         setState(() {
           b.position += details.delta;
         });
-        if (widget.isOverTrash(b.position)) {
-          widget.onDraggingOverTrash?.call(true);
-        } else {
-          widget.onDraggingOverTrash?.call(false);
-        }
+        final overTrash = widget.isOverTrash(details.globalPosition);
+        widget.onDraggingOverTrash?.call(overTrash);
         widget.onUpdate();
       },
-      onPanEnd: (_) {
-        widget.onInteract?.call(false);
-        if (widget.isOverTrash(b.position)) {
-          widget.onDelete();
-        } else {
-          widget.onSave();
-        }
-        widget.onDraggingOverTrash?.call(false);
-      },
+      onPanEnd: (details) {
+      widget.onInteract?.call(false);
+
+      // ✅ parmağın son pozisyonunu kullan
+      final releasePos = details.velocity.pixelsPerSecond == Offset.zero
+          ? _lastGlobalPoint
+          : _lastGlobalPoint;
+
+      if (releasePos != null && widget.isOverTrash(releasePos)) {
+        widget.onDelete();
+      } else {
+        widget.onSave();
+      }
+
+      widget.onDraggingOverTrash?.call(false);
+    },
       child: Transform.scale(
         scale: b.scale ?? 1.0,
         child: Stack(
