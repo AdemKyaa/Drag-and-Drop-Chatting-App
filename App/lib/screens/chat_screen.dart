@@ -396,24 +396,6 @@ class _ChatScreenState extends State<ChatScreen> {
               PopupMenuItem(value: 'en', child: Text('English')),
             ],
           ),
-
-          // Text ekleme
-          IconButton(
-            icon: const Icon(Icons.text_fields),
-            onPressed: _addTextBox,
-          ),
-
-          // Resim ekleme
-          IconButton(
-            icon: const Icon(Icons.image),
-            onPressed: _pickImage,
-          ),
-
-          // Emoji ekleme
-          IconButton(
-            icon: const Icon(Icons.emoji_emotions),
-            onPressed: _openEmojiSheet,
-          ),
         ],
       ),
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
@@ -767,6 +749,16 @@ class _ChatScreenState extends State<ChatScreen> {
             ],
           );
         },
+      ),
+      bottomNavigationBar: BottomAppBar(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            IconButton(icon: const Icon(Icons.text_fields), onPressed: _addTextBox),
+            IconButton(icon: const Icon(Icons.emoji_emotions), onPressed: _openEmojiSheet),
+            IconButton(icon: const Icon(Icons.image), onPressed: _pickImage),
+          ],
+        ),
       ),
     );
   }

@@ -64,11 +64,25 @@ class _ResizableImageBoxState extends State<ResizableImageBox> {
 
   @override
   Widget build(BuildContext context) {
+    final b = widget.box;
+
     return Positioned(
       left: position.dx,
       top: position.dy,
       child: GestureDetector(
         onTap: () => widget.onSelect(true),
+        onLongPress: () {
+          setState(() {
+            b.isSelected = true;
+            b.scale = 1.2;       // 🔍 büyütme
+            b.showDelete = true; // 🗑️ silme butonu
+          });
+        },
+        onLongPressEnd: (_) {
+          setState(() {
+            b.scale = 1.0; // tekrar normale dön
+          });
+        },
         onPanStart: (_) {
           setState(() => dragging = true);
           widget.onInteract?.call(true);
@@ -92,44 +106,58 @@ class _ResizableImageBoxState extends State<ResizableImageBox> {
           }
           widget.onDraggingOverTrash?.call(false);
         },
-        child: Stack(
-          children: [
-            Container(
-              width: width,
-              height: height,
-              decoration: BoxDecoration(
-                border: widget.box.isSelected && widget.isEditing
-                    ? Border.all(color: Colors.blue, width: 2)
-                    : null,
+        child: Transform.scale(
+          scale: b.scale ?? 1.0, // ✅ büyütme efekti
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: width,
+                height: height,
+                decoration: BoxDecoration(
+                  border: b.isSelected && widget.isEditing
+                      ? Border.all(color: Colors.blue, width: 2)
+                      : null,
+                ),
+                child: b.imageBytes != null && b.imageBytes!.isNotEmpty
+                    ? Image.memory(
+                        b.imageBytes as Uint8List,
+                        fit: BoxFit.cover,
+                      )
+                    : const ColoredBox(color: Colors.grey),
               ),
-              child: widget.box.imageBytes != null &&
-                      widget.box.imageBytes!.isNotEmpty
-                  ? Image.memory(
-                      widget.box.imageBytes as Uint8List,
-                      fit: BoxFit.cover,
-                    )
-                  : const ColoredBox(color: Colors.grey),
-            ),
 
-            // 🔲 Sağ-alt köşe resize handle
-            if (widget.isEditing && widget.box.isSelected)
-              Positioned(
-                right: 0,
-                bottom: 0,
-                child: GestureDetector(
-                  onPanUpdate: (details) => _updateSize(details.delta),
-                  child: Container(
-                    width: 20,
-                    height: 20,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      border: Border.all(color: Colors.black),
-                    ),
-                    child: const Icon(Icons.drag_handle, size: 12),
+              // 🗑️ Silme butonu (sadece uzun basınca)
+              if (b.showDelete == true)
+                Positioned(
+                  top: -10,
+                  right: -10,
+                  child: IconButton(
+                    icon: const Icon(Icons.close, color: Colors.red),
+                    onPressed: widget.onDelete,
                   ),
                 ),
-              ),
-          ],
+
+              // 🔲 Sağ-alt köşe resize handle
+              if (widget.isEditing && b.isSelected)
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: GestureDetector(
+                    onPanUpdate: (details) => _updateSize(details.delta),
+                    child: Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: Colors.black),
+                      ),
+                      child: const Icon(Icons.drag_handle, size: 12),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

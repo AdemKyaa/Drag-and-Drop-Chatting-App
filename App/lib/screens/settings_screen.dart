@@ -179,6 +179,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   },
                 ),
               ),
+              const SizedBox(height: 24),
               SwitchListTile(
                 title: const Text("Karanlık Mod"),
                 value: data['isDarkMode'] ?? false,
@@ -189,6 +190,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       .set({'isDarkMode': val}, SetOptions(merge: true));
                 },
               ),
+
             ],
           ),
         );

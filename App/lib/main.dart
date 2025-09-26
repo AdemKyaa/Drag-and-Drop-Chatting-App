@@ -41,9 +41,11 @@ class MyApp extends StatelessWidget {
               brightness: Brightness.dark,
             );
 
+            final isDark = data['isDarkMode'] ?? false;
+
             return MaterialApp(
               debugShowCheckedModeBanner: false,
-              themeMode: ThemeMode.system,
+              themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
               theme: ThemeData(
                 useMaterial3: true,
                 colorScheme: lightScheme,

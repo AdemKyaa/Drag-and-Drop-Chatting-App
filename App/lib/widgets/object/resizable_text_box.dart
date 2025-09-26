@@ -846,149 +846,114 @@ Row(
 Widget build(BuildContext context) {
   final b = widget.box;
 
-  final media = MediaQuery.of(context);
-  final kb = media.viewInsets.bottom;
-  final screen = media.size;
-
-  final floatingEdit = widget.isEditing && b.type == "textbox" && kb > 0;
-
-  // klavye üstü konum (floatOnEdit true ise)
-  const floatLeft = 16.0;
-  final availableH = screen.height - kb;
-  final upper = availableH - b.height - 8.0;
-  final topForBox = upper < 8.0 ? 8.0 : upper;
-
-  final showToolbar = widget.inlineToolbar && widget.isEditing && b.type == "textbox";
-  final posLeft = floatingEdit && widget.floatOnEdit ? floatLeft : b.position.dx;
-  final posTop = (floatingEdit && widget.floatOnEdit ? topForBox : b.position.dy) -
-      (showToolbar ? (_toolbarH + 6) : 0.0);
-
-  final double effR = _effectiveRadius(b);
   return Positioned(
-    left: posLeft,
-    top: posTop,
-    child: Stack(
-      clipBehavior: Clip.none,
-      children: [
-        GestureDetector(
-          behavior: HitTestBehavior.deferToChild,
-          onScaleStart: _onScaleStart,
-          onScaleUpdate: _onScaleUpdate,
-          onScaleEnd: _onScaleEnd,
-          onDoubleTap: () {
-            final b = widget.box;
-            b.isSelected = true;
-            widget.onUpdate();
-            widget.onSelect(false);
-            if (b.type == "image") {
-              _openImageEditPanel();
-            } else {
-              _openTextBoxEditPanel();
-            }
-          },
-          onTap: () {
-            final b = widget.box;
-            final alreadySelected = b.isSelected;
-
-            if (!alreadySelected) {
-              if (b.type == "image") {
-                widget.onSelect(false); // sadece seç
-              } else {
-                widget.onSelect(false);
-              }
-              b.isSelected = true;
-            } else {
-              if (b.type == "textbox") {
-                widget.onSelect(true);
-                Future.microtask(() {
-                  if (!_focusNode.hasFocus) _focusNode.requestFocus();
-                });
-              } else {
-                widget.onSelect(true);
-              }
-            }
-          },
-          child: Transform.rotate(
-            angle: (floatingEdit && widget.floatOnEdit) ? 0.0 : b.rotation,
-            child: SizedBox(
+    left: b.position.dx,
+    top: b.position.dy,
+    child: GestureDetector(
+      onTap: () => widget.onSelect(true),
+      onLongPress: () {
+        setState(() {
+          b.isSelected = true;
+          b.scale = 1.2;       // 🔍 büyütme efekti
+          b.showDelete = true; // 🗑️ silme butonu
+        });
+      },
+      onLongPressEnd: (_) {
+        setState(() {
+          b.scale = 1.0; // normale dön
+        });
+      },
+      onPanStart: (_) {
+        widget.onInteract?.call(true);
+      },
+      onPanUpdate: (details) {
+        setState(() {
+          b.position += details.delta;
+        });
+        if (widget.isOverTrash(b.position)) {
+          widget.onDraggingOverTrash?.call(true);
+        } else {
+          widget.onDraggingOverTrash?.call(false);
+        }
+        widget.onUpdate();
+      },
+      onPanEnd: (_) {
+        widget.onInteract?.call(false);
+        if (widget.isOverTrash(b.position)) {
+          widget.onDelete();
+        } else {
+          widget.onSave();
+        }
+        widget.onDraggingOverTrash?.call(false);
+      },
+      child: Transform.scale(
+        scale: b.scale ?? 1.0,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
               width: b.width,
-              height: b.height + (showToolbar ? (_toolbarH + 6) : 0),
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  if (showToolbar)
-                    Positioned(
-                      left: 0,
-                      top: 0,
-                      child: _buildTextInlineToolbar(b),
-                    ),
-
-                  // ana kutu
-                  Positioned(
-                    left: 0,
-                    top: (showToolbar ? (_toolbarH + 6) : 0),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(effR),
-                      child: Container(
-                        width: b.width,
-                        height: b.height,
-                        alignment: Alignment.center,
-                        padding: b.type == "textbox"
-                            ? const EdgeInsets.symmetric(horizontal: 12, vertical: 6)
-                            : EdgeInsets.zero,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(effR),
-                          color: b.type == "image"
-                              ? Colors.transparent
-                              : Color(b.backgroundColor).withAlpha(
-                                  (b.backgroundOpacity * 255).clamp(0, 255).round(),
-                                ),
-                        ),
-                        child: _buildContent(b),
-                      ),
-                    ),
-                  ),
-
-                  if (b.isSelected)
-                    Positioned(
-                      left: 0,
-                      top: (showToolbar ? (_toolbarH + 6) : 0),
-                      child: IgnorePointer(
-                        child: CustomPaint(
-                          size: Size(b.width, b.height),
-                          painter: _OutlinePainter(
-                            radius: effR,
-                            show: true,
-                            color: Colors.blueAccent,
-                            strokeWidth: 2,
-                          ),
-                        ),
-                      ),
-                    ),
-
-                  // handle'lar (sadece resim)
-                  if (b.type == "image" && widget.isEditing)
-                    Positioned(
-                      left: 0,
-                      top: (showToolbar ? (_toolbarH + 6) : 0),
-                      child: SizedBox(
-                        width: b.width,
-                        height: b.height,
-                        child: Stack(
-                          clipBehavior: Clip.none,
-                          children: _buildResizeHandles(b),
-                        ),
-                      ),
-                    ),
-                ],
+              height: b.height,
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                border: b.isSelected && widget.isEditing
+                    ? Border.all(color: Colors.blue, width: 2)
+                    : null,
+              ),
+              child: Text(
+                b.text,
+                style: TextStyle(
+                  fontSize: b.fixedFontSize,
+                  fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
+                  fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
+                  decoration: b.underline ? TextDecoration.underline : null,
+                  color: Color(b.textColor),
+                ),
               ),
             ),
-          ),
+
+            // 🗑️ Silme butonu (uzun basınca)
+            if (b.showDelete == true)
+              Positioned(
+                top: -10,
+                right: -10,
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.red),
+                  onPressed: widget.onDelete,
+                ),
+              ),
+
+            // 🔲 Sağ-alt köşe resize handle
+            if (widget.isEditing && b.isSelected)
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: GestureDetector(
+                  onPanUpdate: (details) {
+                    setState(() {
+                      b.width = (b.width + details.delta.dx).clamp(50, 600);
+                      b.height = (b.height + details.delta.dy).clamp(30, 400);
+                    });
+                    widget.onUpdate();
+                  },
+                  child: Container(
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      border: Border.all(color: Colors.black),
+                    ),
+                    child: const Icon(Icons.drag_handle, size: 12),
+                  ),
+                ),
+              ),
+          ],
         ),
-      ],
+      ),
     ),
   );
 }
+
 
 }
 class _OutlinePainter extends CustomPainter {

@@ -58,7 +58,8 @@ class BoxItem {
   double height;
   double rotation;
   bool isSelected;
-
+  double scale;
+  bool showDelete;
   // text
   String text;
   double fontSize;
@@ -98,6 +99,8 @@ class BoxItem {
     this.height = 80,
     this.rotation = 0,
     this.isSelected = false,
+    this.scale = 1.0,
+    this.showDelete = false,
     this.imageUrl,
     this.text = "",
     this.fontSize = 48,
@@ -186,6 +189,8 @@ class BoxItem {
       'rotation': rotation,
       'z': z,
       'isSelected': isSelected,
+      'scale': scale,
+      'showDelete': showDelete,
       // 🔑 sadece url yaz
       'imageUrl': (imageUrl != null && imageUrl!.isNotEmpty) ? imageUrl : null,
       'imageOpacity': imageOpacity,
@@ -224,7 +229,8 @@ class BoxItem {
       rotation: (m['rotation'] ?? 0.0).toDouble(),
       z: (m['z'] ?? 0) as int,
       isSelected: (m['isSelected'] ?? false) as bool,
-
+      scale: (m['scale'] ?? 1.0).toDouble(),
+      showDelete: (m['showDelete'] ?? false) as bool,
       // 🔑 sadece url oku
       imageUrl: (m['imageUrl'] ?? '') as String?,
       imageOpacity: (m['imageOpacity'] ?? 1.0).toDouble(),
