@@ -233,6 +233,7 @@ class BoxItem {
       // metin
       text: (m['text'] ?? '') as String,
       fixedFontSize: (m['fixedFontSize'] ?? 16.0).toDouble(),
+      opacity: (m['opacity'] ?? 1.0).toDouble(),
       fontFamily: (m['fontFamily'] ?? 'Roboto') as String,
       bold: (m['bold'] ?? false) as bool,
       italic: (m['italic'] ?? false) as bool,

@@ -624,7 +624,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     b.height = (_pinchStartH * scale).clamp(32.0, 4096.0);
                     b.rotation = _pinchStartRot + deltaAng;
                   }else if (b.type == 'emoji') {
-                    b.fontSize = (_pinchStartFont * scale).clamp(16.0, 300.0);
+                    b.fixedFontSize = (_pinchStartFont * scale).clamp(16.0, 300.0);
                     b.rotation = _pinchStartRot + deltaAng;
                   }
                   setState(() {}); // anlık yansıt

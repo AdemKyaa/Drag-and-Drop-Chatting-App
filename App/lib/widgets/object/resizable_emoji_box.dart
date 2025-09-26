@@ -1,4 +1,3 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../models/box_item.dart';
 
@@ -36,6 +35,7 @@ class ResizableEmojiBox extends StatefulWidget {
 
 class _ResizableEmojiBoxState extends State<ResizableEmojiBox> {
   Offset? _dragStart;
+  Offset? _lastGlobalPos; // <— drop anında çöp kontrolü için
 
   @override
   Widget build(BuildContext context) {
@@ -44,46 +44,55 @@ class _ResizableEmojiBoxState extends State<ResizableEmojiBox> {
     return Positioned(
       left: b.position.dx,
       top: b.position.dy,
-      child: GestureDetector(
-        onTap: () => widget.onSelect(false),
-        onDoubleTap: () => widget.onSelect(true),
-        onPanStart: (details) {
-          _dragStart = details.globalPosition;
-          widget.onSelect(false);
-          widget.onPrimaryPointerDown?.call(widget.box, 0, details.globalPosition);
+      child: Listener(
+        // Primary pointer id’yi gerçekten yakalıyoruz:
+        onPointerDown: (e) {
+          widget.onPrimaryPointerDown?.call(widget.box, e.pointer, e.position);
         },
-        onPanUpdate: (details) {
-          final start = _dragStart;
-          if (start == null) return;
-          final delta = details.globalPosition - start;
-          _dragStart = details.globalPosition;
-          setState(() {
-            b.position += delta;
-          });
+        child: GestureDetector(
+          onTap: () => widget.onSelect(false),
+          onDoubleTap: () => widget.onSelect(true),
 
-          // Çöp alanı kontrol
-          final overTrash = widget.isOverTrash(details.globalPosition);
-          widget.onDraggingOverTrash?.call(overTrash);
-        },
-        onPanEnd: (_) async {
-          final overTrash = widget.isOverTrash(
-            b.position + Offset(b.width / 2, b.height / 2),
-          );
-          if (overTrash) {
-            await widget.onDelete();
-          } else {
-            await widget.onSave();
-          }
-          widget.onDraggingOverTrash?.call(false);
-        },
-        child: Transform.rotate(
-          angle: b.rotation,
-          child: Opacity(
-            opacity: b.opacity,
-            child: Text(
-              b.text ?? "😀",
-              style: TextStyle(
-                fontSize: b.fixedFontSize,
+          onPanStart: (details) {
+            _dragStart = details.globalPosition;
+            _lastGlobalPos = details.globalPosition;
+            widget.onSelect(false);
+          },
+
+          onPanUpdate: (details) {
+            final start = _dragStart;
+            if (start == null) return;
+
+            final delta = details.globalPosition - start;
+            _dragStart = details.globalPosition;
+            _lastGlobalPos = details.globalPosition;
+
+            setState(() {
+              b.position += delta;
+            });
+
+            // çöp alanı hover göstergesi
+            final overTrash = widget.isOverTrash(details.globalPosition);
+            widget.onDraggingOverTrash?.call(overTrash);
+          },
+
+          onPanEnd: (_) async {
+            final overTrash = widget.isOverTrash(_lastGlobalPos ?? Offset.zero);
+            if (overTrash) {
+              await widget.onDelete();
+            } else {
+              await widget.onSave();
+            }
+            widget.onDraggingOverTrash?.call(false);
+          },
+
+          child: Transform.rotate(
+            angle: b.rotation,
+            child: Opacity(
+              opacity: b.opacity,
+              child: Text(
+                b.text ?? "😀",
+                style: TextStyle(fontSize: b.fixedFontSize),
               ),
             ),
           ),

@@ -13,7 +13,7 @@ class EmojiObject extends StatelessWidget {
         opacity: box.opacity,
         child: Text(
           box.text,
-          style: TextStyle(fontSize: box.fontSize),
+          style: TextStyle(fontSize: box.fixedFontSize),
         ),
       ),
     );
