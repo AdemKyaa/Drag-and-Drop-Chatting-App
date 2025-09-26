@@ -4,7 +4,7 @@ import '../../models/box_item.dart';
 class EmojiEditPanel extends StatelessWidget {
   final BoxItem box;
   final VoidCallback onUpdate;
-  final VoidCallback onSave;
+  final Future<void> Function() onSave;
   final VoidCallback onClose;
   final VoidCallback onBringToFront;
   final VoidCallback onSendToBack;
@@ -22,32 +22,42 @@ class EmojiEditPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: Colors.black54,
-      padding: const EdgeInsets.all(12),
+      color: Colors.grey.shade200,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Row(
         children: [
-          const Text("Opacity", style: TextStyle(color: Colors.white)),
+          // Opacity Slider
+          const Text("Opacity"),
           Expanded(
             child: Slider(
               value: box.opacity,
-              min: 0.0,
-              max: 1.0,
-              divisions: null, // ✅ ara kilit noktası yok
-              onChanged: (val) {
-                box.opacity = val;
+              onChanged: (v) {
+                box.opacity = v;
                 onUpdate();
               },
+              min: 0.0,
+              max: 1.0,
             ),
           ),
+
           IconButton(
+            icon: const Icon(Icons.vertical_align_top),
             tooltip: "En üste al",
-            icon: const Icon(Icons.vertical_align_top, color: Colors.white),
             onPressed: onBringToFront,
           ),
           IconButton(
+            icon: const Icon(Icons.vertical_align_bottom),
             tooltip: "En alta al",
-            icon: const Icon(Icons.vertical_align_bottom, color: Colors.white),
             onPressed: onSendToBack,
+          ),
+
+          IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: onClose,
+          ),
+          IconButton(
+            icon: const Icon(Icons.check),
+            onPressed: onSave,
           ),
         ],
       ),

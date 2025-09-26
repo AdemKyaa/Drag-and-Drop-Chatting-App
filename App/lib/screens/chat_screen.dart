@@ -12,6 +12,8 @@ import '../widgets/delete_area.dart';
 import '../widgets/panels/toolbar_panel.dart';
 import '../widgets/panels/emoji_edit_panel.dart';
 import '../widgets/object/resizable_emoji_box.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart' as ep;
 
 class ChatScreen extends StatefulWidget {
   final String currentUserId;
@@ -222,27 +224,25 @@ class _ChatScreenState extends State<ChatScreen> {
     showModalBottomSheet(
       context: context,
       builder: (context) {
-        final emojis = [
-          "😀","😁","😂","🤣","😃","😄","😅","😆","😉","😊","😍","😘","😜","🤔",
-          "😎","😭","😡","🤯","👍","👎","🙏","👏","🙌","🔥","❤️","💔","✨","🌟",
-          "🌈","🎉","🎂","⚽","🏀","🎮","🎵","🚗","✈️","🏠","💡","📱","💻","🖥️"
-        ]; // istediğin kadar ekleyebilirsin
-
-        return GridView.builder(
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 6,
-          ),
-          itemCount: emojis.length,
-          itemBuilder: (context, index) {
-            final e = emojis[index];
-            return InkWell(
-              onTap: () {
-                Navigator.pop(context);
-                _addEmoji(e);
-              },
-              child: Center(child: Text(e, style: const TextStyle(fontSize: 28))),
-            );
+        return ep.EmojiPicker(
+          onEmojiSelected: (category, emoji) {
+            Navigator.pop(context);
+            _addEmoji(emoji.emoji);
           },
+          config: const ep.Config(
+            height: 256,
+            emojiViewConfig: ep.EmojiViewConfig(
+              emojiSizeMax: 32,
+              backgroundColor: Color(0xFFF2F2F2),
+            ),
+            categoryViewConfig: ep.CategoryViewConfig(
+              iconColor: Colors.grey,
+              iconColorSelected: Colors.blue,
+              indicatorColor: Colors.blue,
+            ),
+            skinToneConfig: ep.SkinToneConfig(enabled: true),
+            checkPlatformCompatibility: true,
+          ),
         );
       },
     );
@@ -252,11 +252,18 @@ class _ChatScreenState extends State<ChatScreen> {
     final newBox = BoxItem(
       id: DateTime.now().toIso8601String(),
       type: "emoji",
+      position: const Offset(120, 120),
       text: emoji,
-      fontSize: 64,
+      fixedFontSize: 64,
       opacity: 1.0,
+      isSelected: true,
     );
-    setState(() => boxes.add(newBox));
+
+    setState(() {
+      boxes.add(newBox);
+      _editingBox = newBox;
+    });
+
     _saveBox(newBox);
   }
 
@@ -284,8 +291,9 @@ class _ChatScreenState extends State<ChatScreen> {
           final mimeType = b.mimeType ?? 'image/jpeg';
 
           String ext = 'jpg';
-          if (mimeType.contains('png')) ext = 'png';
-          else if (mimeType.contains('gif')) ext = 'gif';
+          if (mimeType.contains('png')) {
+            ext = 'png';
+          } else if (mimeType.contains('gif')) ext = 'gif';
           else if (mimeType.contains('webp')) ext = 'webp';
 
           final ref = _storage.ref().child('${_chatId()}/${b.id}.$ext');
@@ -396,7 +404,7 @@ class _ChatScreenState extends State<ChatScreen> {
             onPressed: _pickImage,
           ),
 
-          // Emoji ekleme (yeni)
+          // Emoji ekleme
           IconButton(
             icon: const Icon(Icons.emoji_emotions),
             onPressed: _openEmojiSheet,
