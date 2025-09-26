@@ -10,6 +10,7 @@ class TextEditPanel extends StatefulWidget {
   final VoidCallback onSave;
   final VoidCallback? onBringToFront;
   final VoidCallback? onSendToBack;
+  final bool isDarkMode; // ✅ Dark mode bilgisi
 
   const TextEditPanel({
     super.key,
@@ -18,6 +19,7 @@ class TextEditPanel extends StatefulWidget {
     required this.onSave,
     this.onBringToFront,
     this.onSendToBack,
+    required this.isDarkMode,
   });
 
   @override
@@ -47,31 +49,39 @@ class _TextEditPanelState extends State<TextEditPanel> {
     Color temp = current;
     await showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: Text(title),
-        content: SingleChildScrollView(
-          child: ColorPicker(
-            pickerColor: temp,
-            onColorChanged: (c) => temp = c,
-            paletteType: PaletteType.hsvWithHue,
-            enableAlpha: false,
-            displayThumbColor: true,
+      builder: (_) {
+        final bgColor =
+            widget.isDarkMode ? Colors.grey[900] : Colors.white;
+        final textColor =
+            widget.isDarkMode ? Colors.white : Colors.black;
+
+        return AlertDialog(
+          backgroundColor: bgColor,
+          title: Text(title, style: TextStyle(color: textColor)),
+          content: SingleChildScrollView(
+            child: ColorPicker(
+              pickerColor: temp,
+              onColorChanged: (c) => temp = c,
+              paletteType: PaletteType.hsvWithHue,
+              enableAlpha: false,
+              displayThumbColor: true,
+            ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("İptal"),
-          ),
-          TextButton(
-            onPressed: () {
-              onSelected(temp);
-              Navigator.pop(context);
-            },
-            child: const Text("Seç"),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text("İptal", style: TextStyle(color: textColor)),
+            ),
+            TextButton(
+              onPressed: () {
+                onSelected(temp);
+                Navigator.pop(context);
+              },
+              child: Text("Seç", style: TextStyle(color: textColor)),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -79,27 +89,41 @@ class _TextEditPanelState extends State<TextEditPanel> {
   Widget build(BuildContext context) {
     final b = widget.box;
 
+    final bgColor = widget.isDarkMode ? Colors.grey[900] : Colors.white;
+    final textColor = widget.isDarkMode ? Colors.white : Colors.black;
+
     return SafeArea(
-      child: Padding(
+      child: Container(
         padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          boxShadow: const [
+            BoxShadow(blurRadius: 12, color: Colors.black26),
+          ],
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               "Metin Ayarları",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+                color: textColor,
+              ),
             ),
             const SizedBox(height: 12),
 
             // 🔹 Arka Plan Rengi
             Row(
               children: [
-                const Text("Arka Plan Rengi"),
+                Text("Arka Plan Rengi", style: TextStyle(color: textColor)),
                 const SizedBox(width: 12),
                 OutlinedButton.icon(
-                  icon: const Icon(Icons.color_lens),
-                  label: const Text("Seç"),
+                  icon: Icon(Icons.color_lens, color: textColor),
+                  label: Text("Seç", style: TextStyle(color: textColor)),
                   onPressed: () async {
                     await _pickColor(
                       title: "Arka Plan Rengi",
@@ -121,7 +145,7 @@ class _TextEditPanelState extends State<TextEditPanel> {
             // 🔹 Arka Plan Opaklığı
             Row(
               children: [
-                const Text("BG Opacity"),
+                Text("BG Opacity", style: TextStyle(color: textColor)),
                 Expanded(
                   child: Slider(
                     value: localBgOpacity,
@@ -141,7 +165,7 @@ class _TextEditPanelState extends State<TextEditPanel> {
             // 🔹 Köşe Yumuşatma
             Row(
               children: [
-                const Text("Radius (%)"),
+                Text("Radius (%)", style: TextStyle(color: textColor)),
                 Expanded(
                   child: Slider(
                     value: localRadiusFactor,
@@ -161,11 +185,11 @@ class _TextEditPanelState extends State<TextEditPanel> {
             // 🔹 Metin Rengi
             Row(
               children: [
-                const Text("Metin Rengi"),
+                Text("Metin Rengi", style: TextStyle(color: textColor)),
                 const SizedBox(width: 12),
                 OutlinedButton.icon(
-                  icon: const Icon(Icons.color_lens),
-                  label: const Text("Seç"),
+                  icon: Icon(Icons.color_lens, color: textColor),
+                  label: Text("Seç", style: TextStyle(color: textColor)),
                   onPressed: () async {
                     await _pickColor(
                       title: "Metin Rengi",
@@ -184,20 +208,22 @@ class _TextEditPanelState extends State<TextEditPanel> {
               ],
             ),
             const SizedBox(height: 12),
+
+            // 🔹 Z-Order butonları
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    icon: const Icon(Icons.vertical_align_top),
-                    label: const Text("En Üste Al"),
+                    icon: Icon(Icons.vertical_align_top, color: textColor),
+                    label: Text("En Üste Al", style: TextStyle(color: textColor)),
                     onPressed: widget.onBringToFront,
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: OutlinedButton.icon(
-                    icon: const Icon(Icons.vertical_align_bottom),
-                    label: const Text("En Alta Al"),
+                    icon: Icon(Icons.vertical_align_bottom, color: textColor),
+                    label: Text("En Alta Al", style: TextStyle(color: textColor)),
                     onPressed: widget.onSendToBack,
                   ),
                 ),

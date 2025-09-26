@@ -15,6 +15,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _passwordController = TextEditingController();
   bool _loading = false;
 
+  /// Kullanıcının seçtiği tema (null → sistem temasını kullan)
+  bool? _isDarkMode;
+
   Future<void> _register() async {
     final username = _usernameController.text.trim();
     final password = _passwordController.text.trim();
@@ -77,25 +80,74 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 📱 Eğer kullanıcı override etmemişse cihazın sistem temasını kullan
+    final isDark = _isDarkMode ??
+        MediaQuery.of(context).platformBrightness == Brightness.dark;
+
+    final background = isDark ? Colors.grey[900] : Colors.grey[50];
+    final cardColor = isDark ? Colors.black : Colors.white;
+    final textColor = isDark ? Colors.white : Colors.black;
+
     return Scaffold(
-      appBar: AppBar(title: const Text("Kayıt Ol")),
+      appBar: AppBar(
+        title: const Text("Kayıt Ol"),
+        backgroundColor: cardColor,
+        foregroundColor: textColor,
+        actions: [
+          IconButton(
+            icon: Icon(isDark ? Icons.dark_mode : Icons.light_mode),
+            color: textColor,
+            onPressed: () {
+              setState(() {
+                _isDarkMode = !isDark;
+              });
+            },
+          ),
+        ],
+      ),
+      backgroundColor: background,
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
             TextField(
               controller: _usernameController,
-              decoration: const InputDecoration(labelText: "Kullanıcı adı"),
+              style: TextStyle(color: textColor),
+              decoration: InputDecoration(
+                labelText: "Kullanıcı adı",
+                labelStyle: TextStyle(color: textColor),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: textColor.withOpacity(0.6)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: textColor),
+                ),
+              ),
             ),
+            const SizedBox(height: 16),
             TextField(
               controller: _passwordController,
               obscureText: true,
-              decoration: const InputDecoration(labelText: "Şifre"),
+              style: TextStyle(color: textColor),
+              decoration: InputDecoration(
+                labelText: "Şifre",
+                labelStyle: TextStyle(color: textColor),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: textColor.withOpacity(0.6)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: textColor),
+                ),
+              ),
             ),
             const SizedBox(height: 20),
             _loading
                 ? const CircularProgressIndicator()
                 : ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: cardColor,
+                      foregroundColor: textColor,
+                    ),
                     onPressed: _register,
                     child: const Text("Kayıt Ol"),
                   ),

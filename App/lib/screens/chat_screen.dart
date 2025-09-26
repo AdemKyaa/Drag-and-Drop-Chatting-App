@@ -220,7 +220,7 @@ class _ChatScreenState extends State<ChatScreen> {
     await _saveBox(box);
   }
 
-  void _openEmojiSheet() {
+  void _openEmojiSheet(bool isDarkMode) {
     showModalBottomSheet(
       context: context,
       builder: (context) {
@@ -229,22 +229,24 @@ class _ChatScreenState extends State<ChatScreen> {
             Navigator.pop(context);
             _addEmoji(emoji.emoji);
           },
-          config: const ep.Config(
+          config: ep.Config(
             height: 256,
             emojiViewConfig: ep.EmojiViewConfig(
               emojiSizeMax: 32,
-              backgroundColor: Color(0xFFF2F2F2),
+              backgroundColor: isDarkMode ? Colors.black : const Color(0xFFF2F2F2),
             ),
             categoryViewConfig: ep.CategoryViewConfig(
-              iconColor: Colors.grey,
+              iconColor: isDarkMode ? Colors.white70 : Colors.grey,
               iconColorSelected: Colors.blue,
               indicatorColor: Colors.blue,
+              backgroundColor: isDarkMode ? Colors.black : Colors.white,
             ),
-            skinToneConfig: ep.SkinToneConfig(enabled: true),
+            skinToneConfig: const ep.SkinToneConfig(enabled: true),
             checkPlatformCompatibility: true,
           ),
         );
       },
+      backgroundColor: isDarkMode ? Colors.grey[900] : Colors.white, // ✅ panel arka planı
     );
   }
 
@@ -382,386 +384,338 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // ==== UI ====
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.otherUsername ?? "Chat"),
-        actions: [
-          // Dil seçimi menüsü
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.translate),
-            onSelected: (v) => _setLang(v),
-            itemBuilder: (ctx) => const [
-              PopupMenuItem(value: 'tr', child: Text('Türkçe')),
-              PopupMenuItem(value: 'en', child: Text('English')),
-            ],
+Widget build(BuildContext context) {
+  return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+    stream: FirebaseFirestore.instance
+        .collection('users')
+        .doc(widget.currentUserId) // kendi ayarını baz alıyoruz
+        .snapshots(),
+    builder: (context, snap) {
+      final data = snap.data?.data() ?? {};
+
+      // 🔹 Firestore’dan tema bilgileri
+      final bool isDarkMode = data['isDarkMode'] ?? false;
+      final int seed = (data['themeColor'] as int?) ?? 0xFF2962FF;
+
+      final background = isDarkMode ? Colors.grey[900] : Colors.grey[50];
+      final cardColor = isDarkMode ? Colors.black : Colors.white;
+      final textColor = isDarkMode ? Colors.white : Colors.black;
+      final themeColor = Color(seed);
+
+      final bgType = (data['chatBgType'] ?? 'color') as String;
+      final bgUrl = data['chatBgUrl'] as String?;
+
+      return Scaffold(
+        appBar: AppBar(
+          backgroundColor: cardColor,
+          foregroundColor: textColor,
+          iconTheme: IconThemeData(color: textColor),
+          title: Text(
+            widget.otherUsername ?? "Chat",
+            style: TextStyle(color: textColor),
           ),
-        ],
-      ),
-      body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance
-            .collection('users')
-            .doc(widget.currentUserId) // kendi ayarını baz alıyoruz
-            .snapshots(),
-        builder: (context, snap) {
-          final data = snap.data?.data() ?? {};
-          final bgType = (data['chatBgType'] ?? 'color') as String;
-          final bgColorInt = (data['chatBgColor'] ?? 0xFFFFFFFF) as int;
-          final bgColor = Color(bgColorInt);
-          final bgUrl = data['chatBgUrl'] as String?;
-
-          return Stack(
-            key: _stageKey,
-            children: [
-              // 1) Arkaplan (en altta)
-              Positioned.fill(
-                child: bgType == 'image' && (bgUrl?.isNotEmpty ?? false)
-                    ? DecoratedBox(
-                        decoration: BoxDecoration(
-                          image: DecorationImage(
-                            image: NetworkImage(bgUrl!),
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                      )
-                    : Container(color: bgColor),
-              ),
-
-              // 2) Boş alana basınca seçimleri kaldır
-              Positioned.fill(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onTap: () {
-                    setState(() {
-                      for (final b in boxes) {
-                        b.isSelected = false;
-                      }
-                      _editingBox = null;
-                    });
-                  },
-                ),
-              ),
-
-              // 3) Objeler (textbox / image / emoji)
-              ...boxes.map((b) {
-                if (b.type == "textbox") {
-                  return TextObject(
-                    box: b,
-                    displayLang: _targetLang,
-                    isEditing: _editingBox == b,
-                    onUpdate: () => setState(() {}),
-                    onSave: () async => _saveBox(b),
-                    onSelect: (edit) {
-                      setState(() {
-                        for (final other in boxes) {
-                          other.isSelected = false;
-                        }
-                        b.isSelected = true;
-                        _editingBox = edit ? b : null;
-                      });
-                    },
-                    onDelete: () async {
-                      setState(() {
-                        boxes.remove(b);
-                        if (_editingBox == b) _editingBox = null;
-                      });
-                      await _messagesCol.doc(b.id).delete();
-                    },
-                    isOverTrash: _pointOverTrash,
-                    onDraggingOverTrash: (v) => setState(() => _isOverTrash = v),
-                    onInteract: (_) {},
-                    onPrimaryPointerDown: (box, pid, globalPos) {
-                      _beginPinchFromObject(box, pid, globalPos);
-                    },
-                    onBringToFront: () {
-                      setState(() {
-                        final maxZ = boxes.isEmpty
-                            ? 0
-                            : boxes.map((e) => e.z).reduce((a, c) => a > c ? a : c);
-                        b.z = maxZ + 1;
-                        boxes.sort((a, c) => a.z.compareTo(c.z));
-                      });
-                      _saveBox(b);
-                    },
-                    onSendToBack: () {
-                      setState(() {
-                        final minZ = boxes.isEmpty
-                            ? 0
-                            : boxes.map((e) => e.z).reduce((a, c) => a < c ? a : c);
-                        b.z = minZ - 1;
-                        boxes.sort((a, c) => a.z.compareTo(c.z));
-                      });
-                      _saveBox(b);
-                    },
-                  );
-                } else if (b.type == "image") {
-                  return ImageObject(
-                    box: b,
-                    isEditing: false,
-                    onUpdate: () => setState(() {}),
-                    onSave: () async => _saveBox(b),
-                    onSelect: (_) {
-                      setState(() {
-                        for (final other in boxes) {
-                          other.isSelected = false;
-                        }
-                        b.isSelected = true;
-                      });
-                    },
-                    onDelete: () async {
-                      setState(() => boxes.remove(b));
-                      await _messagesCol.doc(b.id).delete();
-                    },
-                    isOverTrash: _pointOverTrash,
-                    onDraggingOverTrash: (v) => setState(() => _isOverTrash = v),
-                    onInteract: (_) {},
-                    onPrimaryPointerDown: (box, pid, globalPos) {
-                      _beginPinchFromObject(box, pid, globalPos);
-                    },
-                    onBringToFront: () {
-                      setState(() {
-                        final maxZ = boxes.isEmpty
-                            ? 0
-                            : boxes.map((e) => e.z).reduce((a, c) => a > c ? a : c);
-                        b.z = maxZ + 1;
-                        boxes.sort((a, c) => a.z.compareTo(c.z));
-                      });
-                      _saveBox(b);
-                    },
-                    onSendToBack: () {
-                      setState(() {
-                        final minZ = boxes.isEmpty
-                            ? 0
-                            : boxes.map((e) => e.z).reduce((a, c) => a < c ? a : c);
-                        b.z = minZ - 1;
-                        boxes.sort((a, c) => a.z.compareTo(c.z));
-                      });
-                      _saveBox(b);
-                    },
-                  );
-                } else if (b.type == "emoji") {
-                  return ResizableEmojiBox(
-                    box: b,
-                    isEditing: _editingBox == b,
-                    onUpdate: () => setState(() {}),
-                    onSave: () async => _saveBox(b),
-                    onSelect: (edit) {
-                      setState(() {
-                        for (final other in boxes) {
-                          other.isSelected = false;
-                        }
-                        b.isSelected = true;
-                        _editingBox = edit ? b : null;
-                      });
-                    },
-                    onDelete: () async {
-                      // ✅ direkt silme işlemi
-                      setState(() => boxes.remove(b));
-                      await _messagesCol.doc(b.id).delete();
-                    },
-                    onInteract: (_) {},
-                    isOverTrash: _pointOverTrash,
-                    onDraggingOverTrash: (v) => setState(() => _isOverTrash = v),
-                    onPrimaryPointerDown: (box, pid, globalPos) {
-                      _beginPinchFromObject(box, pid, globalPos);
-                    },
-                    onBringToFront: () {
-                      setState(() {
-                        final maxZ = boxes.isEmpty
-                            ? 0
-                            : boxes.map((e) => e.z).reduce((a, c) => a > c ? a : c);
-                        b.z = maxZ + 1;
-                        boxes.sort((a, c) => a.z.compareTo(c.z));
-                      });
-                      _saveBox(b);
-                    },
-                    onSendToBack: () {
-                      setState(() {
-                        final minZ = boxes.isEmpty
-                            ? 0
-                            : boxes.map((e) => e.z).reduce((a, c) => a < c ? a : c);
-                        b.z = minZ - 1;
-                        boxes.sort((a, c) => a.z.compareTo(c.z));
-                      });
-                      _saveBox(b);
-                    },
-                  );
-                }
-                return const SizedBox.shrink();
-              }).toList(),
-
-              // 4) İki parmakla global pinch/rotate dinleyicisi
-              Positioned.fill(
-                child: Listener(
-                  behavior: HitTestBehavior.translucent,
-                  onPointerDown: (e) {
-                    if (_pinchTarget != null &&
-                        _pinchPrimaryId != null &&
-                        _pinchSecondaryId == null) {
-                      if (!_pointInsideRotatedBox(_pinchTarget!, e.position)) {
-                        _pinchSecondaryId = e.pointer;
-                        _pinchSecondaryStartGlobal = e.position;
-                        final p1 = _pinchPrimaryStartGlobal!;
-                        final p2 = _pinchSecondaryStartGlobal!;
-                        final v = p2 - p1;
-                        _pinchStartDistance = v.distance;
-                        _pinchStartAngle = v.direction;
-                        _overlayPinchActive = true;
-                      }
-                    }
-                  },
-                  onPointerMove: (e) {
-                    if (_overlayPinchActive &&
-                        _pinchTarget != null &&
-                        _pinchPrimaryId != null &&
-                        _pinchSecondaryId != null) {
-                      if (e.pointer == _pinchPrimaryId) {
-                        _pinchPrimaryStartGlobal = e.position;
-                      } else if (e.pointer == _pinchSecondaryId) {
-                        _pinchSecondaryStartGlobal = e.position;
-                      }
-                      final p1 = _pinchPrimaryStartGlobal!;
-                      final p2 = _pinchSecondaryStartGlobal!;
-                      final v = p2 - p1;
-                      final dist = v.distance.clamp(0.001, 1e6);
-                      final ang = v.direction;
-
-                      final scale = (dist / (_pinchStartDistance == 0 ? dist : _pinchStartDistance)).clamp(0.1, 100.0);
-                      final deltaAng = ang - _pinchStartAngle;
-
-                      final b = _pinchTarget!;
-                      if (b.type == 'textbox') {
-                        final lineCount = _lineCount(b);
-                        const padH = 32.0, padV = 24.0;
-                        b.fixedFontSize = (_pinchStartFont * scale).clamp(8.0, 300.0);
-                        final scaledTextSize = measureText(b, 2000);
-                        b.width = (scaledTextSize.width + padH).clamp(24.0, 4096.0);
-                        b.height = (lineCount * b.fixedFontSize * 1.2 + padV).clamp(24.0, 4096.0);
-                        b.rotation = _pinchStartRot + deltaAng;
-                      } else if (b.type == 'image') {
-                        b.width = (_pinchStartW * scale).clamp(32.0, 4096.0);
-                        b.height = (_pinchStartH * scale).clamp(32.0, 4096.0);
-                        b.rotation = _pinchStartRot + deltaAng;
-                      } else if (b.type == 'emoji') {
-                        b.fixedFontSize = (_pinchStartFont * scale).clamp(16.0, 300.0);
-                        b.rotation = _pinchStartRot + deltaAng;
-                      }
-                      setState(() {});
-                    }
-                  },
-                  onPointerUp: (e) {
-                    if (e.pointer == _pinchSecondaryId) {
-                      _pinchSecondaryId = null;
-                      _pinchSecondaryStartGlobal = null;
-                      _overlayPinchActive = false;
-                    }
-                    if (e.pointer == _pinchPrimaryId) {
-                      final b = _pinchTarget;
-                      if (b != null) _saveBox(b);
-                      _pinchTarget = null;
-                      _pinchPrimaryId = null;
-                      _pinchPrimaryStartGlobal = null;
-                      _pinchSecondaryId = null;
-                      _pinchSecondaryStartGlobal = null;
-                      _overlayPinchActive = false;
-                    }
-                  },
-                  onPointerCancel: (e) {
-                    if (e.pointer == _pinchSecondaryId) {
-                      _pinchSecondaryId = null;
-                      _pinchSecondaryStartGlobal = null;
-                      _overlayPinchActive = false;
-                    }
-                    if (e.pointer == _pinchPrimaryId) {
-                      _pinchTarget = null;
-                      _pinchPrimaryId = null;
-                      _pinchPrimaryStartGlobal = null;
-                      _pinchSecondaryId = null;
-                      _pinchSecondaryStartGlobal = null;
-                      _overlayPinchActive = false;
-                    }
-                  },
-                ),
-              ),
-
-              // 5) Çöp alanı
-              Align(
-                alignment: Alignment.bottomCenter,
-                child: DeleteArea(
-                  key: _trashKey,
-                  isActive: _isOverTrash,
-                  onOverChange: (v) => setState(() => _isOverTrash = v),
-                  onDrop: _handleDrop,
-                ),
-              ),
-
-              // 6) Paneller
-              if (_editingBox != null && _editingBox!.type == "textbox")
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: ToolbarPanel(
-                    box: _editingBox!,
-                    onUpdate: () => setState(() {}),
-                    onSave: () async {
-                      final b = _editingBox!;
-                      setState(() => _editingBox = null);
-                      await _translateAndSaveFor(b);
-                    },
-                    onClose: () => setState(() => _editingBox = null),
-                  ),
-                )
-              else if (_editingBox != null && _editingBox!.type == "emoji")
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: EmojiEditPanel(
-                    box: _editingBox!,
-                    onUpdate: () => setState(() {}),
-                    onSave: () async {
-                      final b = _editingBox!;
-                      setState(() => _editingBox = null);
-                      await _saveBox(b);
-                    },
-                    onClose: () => setState(() => _editingBox = null),
-                    onBringToFront: () {
-                      setState(() {
-                        final maxZ = boxes.isEmpty
-                            ? 0
-                            : boxes.map((e) => e.z).reduce((a, c) => a > c ? a : c);
-                        _editingBox!.z = maxZ + 1;
-                        boxes.sort((a, c) => a.z.compareTo(c.z));
-                      });
-                      _saveBox(_editingBox!);
-                    },
-                    onSendToBack: () {
-                      setState(() {
-                        final minZ = boxes.isEmpty
-                            ? 0
-                            : boxes.map((e) => e.z).reduce((a, c) => a < c ? a : c);
-                        _editingBox!.z = minZ - 1;
-                        boxes.sort((a, c) => a.z.compareTo(c.z));
-                      });
-                      _saveBox(_editingBox!);
-                    },
-                  ),
-                ),
-            ],
-          );
-        },
-      ),
-      bottomNavigationBar: BottomAppBar(
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            IconButton(icon: const Icon(Icons.text_fields), onPressed: _addTextBox),
-            IconButton(icon: const Icon(Icons.emoji_emotions), onPressed: _openEmojiSheet),
-            IconButton(icon: const Icon(Icons.image), onPressed: _pickImage),
+          actions: [
+            PopupMenuButton<String>(
+              icon: Icon(Icons.translate, color: textColor),
+              onSelected: (v) => _setLang(v),
+              itemBuilder: (ctx) => const [
+                PopupMenuItem(value: 'tr', child: Text('Türkçe')),
+                PopupMenuItem(value: 'en', child: Text('English')),
+              ],
+            ),
           ],
         ),
-      ),
-    );
-  }
+        backgroundColor: background,
+
+        body: Stack(
+          key: _stageKey,
+          children: [
+            // 1) Arkaplan
+            Positioned.fill(
+              child: bgType == 'image' && (bgUrl?.isNotEmpty ?? false)
+                  ? DecoratedBox(
+                      decoration: BoxDecoration(
+                        image: DecorationImage(
+                          image: NetworkImage(bgUrl!),
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    )
+                  : Container(color: themeColor.withOpacity(0.1)),
+            ),
+
+            // 2) Boş alana basınca seçimleri kaldır
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () {
+                  setState(() {
+                    for (final b in boxes) {
+                      b.isSelected = false;
+                    }
+                    _editingBox = null;
+                  });
+                },
+              ),
+            ),
+
+            // 3) Objeler (textbox / image / emoji)
+            ...boxes.map((b) {
+              if (b.type == "textbox") {
+                return TextObject(
+                  box: b,
+                  displayLang: _targetLang,
+                  isEditing: _editingBox == b,
+                  onUpdate: () => setState(() {}),
+                  onSave: () async => _saveBox(b),
+                  onSelect: (edit) {
+                    setState(() {
+                      for (final other in boxes) {
+                        other.isSelected = false;
+                      }
+                      b.isSelected = true;
+                      _editingBox = edit ? b : null;
+                    });
+                  },
+                  onDelete: () async {
+                    setState(() {
+                      boxes.remove(b);
+                      if (_editingBox == b) _editingBox = null;
+                    });
+                    await _messagesCol.doc(b.id).delete();
+                  },
+                  isOverTrash: _pointOverTrash,
+                  onDraggingOverTrash: (v) =>
+                      setState(() => _isOverTrash = v),
+                  onInteract: (_) {},
+                  onPrimaryPointerDown: (box, pid, globalPos) {
+                    _beginPinchFromObject(box, pid, globalPos);
+                  },
+                  onBringToFront: () {
+                    setState(() {
+                      final maxZ = boxes.isEmpty
+                          ? 0
+                          : boxes
+                              .map((e) => e.z)
+                              .reduce((a, c) => a > c ? a : c);
+                      b.z = maxZ + 1;
+                      boxes.sort((a, c) => a.z.compareTo(c.z));
+                    });
+                    _saveBox(b);
+                  },
+                  onSendToBack: () {
+                    setState(() {
+                      final minZ = boxes.isEmpty
+                          ? 0
+                          : boxes
+                              .map((e) => e.z)
+                              .reduce((a, c) => a < c ? a : c);
+                      b.z = minZ - 1;
+                      boxes.sort((a, c) => a.z.compareTo(c.z));
+                    });
+                    _saveBox(b);
+                  },
+                  isDarkMode: isDarkMode,
+                );
+              } else if (b.type == "image") {
+                return ImageObject(
+                  box: b,
+                  isEditing: false,
+                  onUpdate: () => setState(() {}),
+                  onSave: () async => _saveBox(b),
+                  onSelect: (_) {
+                    setState(() {
+                      for (final other in boxes) {
+                        other.isSelected = false;
+                      }
+                      b.isSelected = true;
+                    });
+                  },
+                  onDelete: () async {
+                    setState(() => boxes.remove(b));
+                    await _messagesCol.doc(b.id).delete();
+                  },
+                  isOverTrash: _pointOverTrash,
+                  onDraggingOverTrash: (v) =>
+                      setState(() => _isOverTrash = v),
+                  onInteract: (_) {},
+                  onPrimaryPointerDown: (box, pid, globalPos) {
+                    _beginPinchFromObject(box, pid, globalPos);
+                  },
+                  onBringToFront: () {
+                    setState(() {
+                      final maxZ = boxes.isEmpty
+                          ? 0
+                          : boxes
+                              .map((e) => e.z)
+                              .reduce((a, c) => a > c ? a : c);
+                      b.z = maxZ + 1;
+                      boxes.sort((a, c) => a.z.compareTo(c.z));
+                    });
+                    _saveBox(b);
+                  },
+                  onSendToBack: () {
+                    setState(() {
+                      final minZ = boxes.isEmpty
+                          ? 0
+                          : boxes
+                              .map((e) => e.z)
+                              .reduce((a, c) => a < c ? a : c);
+                      b.z = minZ - 1;
+                      boxes.sort((a, c) => a.z.compareTo(c.z));
+                    });
+                    _saveBox(b);
+                  },
+                  isDarkMode: isDarkMode,
+                );
+              } else if (b.type == "emoji") {
+                return ResizableEmojiBox(
+                  box: b,
+                  isEditing: _editingBox == b,
+                  onUpdate: () => setState(() {}),
+                  onSave: () async => _saveBox(b),
+                  onSelect: (edit) {
+                    setState(() {
+                      for (final other in boxes) {
+                        other.isSelected = false;
+                      }
+                      b.isSelected = true;
+                      _editingBox = edit ? b : null;
+                    });
+                  },
+                  onDelete: () async {
+                    setState(() => boxes.remove(b));
+                    await _messagesCol.doc(b.id).delete();
+                  },
+                  onInteract: (_) {},
+                  isOverTrash: _pointOverTrash,
+                  onDraggingOverTrash: (v) =>
+                      setState(() => _isOverTrash = v),
+                  onPrimaryPointerDown: (box, pid, globalPos) {
+                    _beginPinchFromObject(box, pid, globalPos);
+                  },
+                  onBringToFront: () {
+                    setState(() {
+                      final maxZ = boxes.isEmpty
+                          ? 0
+                          : boxes
+                              .map((e) => e.z)
+                              .reduce((a, c) => a > c ? a : c);
+                      b.z = maxZ + 1;
+                      boxes.sort((a, c) => a.z.compareTo(c.z));
+                    });
+                    _saveBox(b);
+                  },
+                  onSendToBack: () {
+                    setState(() {
+                      final minZ = boxes.isEmpty
+                          ? 0
+                          : boxes
+                              .map((e) => e.z)
+                              .reduce((a, c) => a < c ? a : c);
+                      b.z = minZ - 1;
+                      boxes.sort((a, c) => a.z.compareTo(c.z));
+                    });
+                    _saveBox(b);
+                  },
+                );
+              }
+              return const SizedBox.shrink();
+            }).toList(),
+
+            // 4) Çöp alanı
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: DeleteArea(
+                key: _trashKey,
+                isActive: _isOverTrash,
+                onOverChange: (v) => setState(() => _isOverTrash = v),
+                onDrop: _handleDrop,
+              ),
+            ),
+
+            // 5) Paneller
+            if (_editingBox != null && _editingBox!.type == "textbox")
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: ToolbarPanel(
+                  box: _editingBox!,
+                  onUpdate: () => setState(() {}),
+                  onSave: () async {
+                    final b = _editingBox!;
+                    setState(() => _editingBox = null);
+                    await _translateAndSaveFor(b);
+                  },
+                  onClose: () => setState(() => _editingBox = null),
+                ),
+              )
+            else if (_editingBox != null && _editingBox!.type == "emoji")
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: EmojiEditPanel(
+                  box: _editingBox!,
+                  onUpdate: () => setState(() {}),
+                  onSave: () async {
+                    final b = _editingBox!;
+                    setState(() => _editingBox = null);
+                    await _saveBox(b);
+                  },
+                  onClose: () => setState(() => _editingBox = null),
+                  onBringToFront: () {
+                    setState(() {
+                      final maxZ = boxes.isEmpty
+                          ? 0
+                          : boxes
+                              .map((e) => e.z)
+                              .reduce((a, c) => a > c ? a : c);
+                      _editingBox!.z = maxZ + 1;
+                      boxes.sort((a, c) => a.z.compareTo(c.z));
+                    });
+                    _saveBox(_editingBox!);
+                  },
+                  onSendToBack: () {
+                    setState(() {
+                      final minZ = boxes.isEmpty
+                          ? 0
+                          : boxes
+                              .map((e) => e.z)
+                              .reduce((a, c) => a < c ? a : c);
+                      _editingBox!.z = minZ - 1;
+                      boxes.sort((a, c) => a.z.compareTo(c.z));
+                    });
+                    _saveBox(_editingBox!);
+                  },
+                  currentUserId: widget.currentUserId,
+                ),
+              ),
+          ],
+        ),
+
+        bottomNavigationBar: BottomAppBar(
+          color: cardColor,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              IconButton(
+                  icon: Icon(Icons.text_fields, color: textColor),
+                  onPressed: _addTextBox),
+              IconButton(
+                icon: Icon(Icons.emoji_emotions, color: textColor),
+                onPressed: () => _openEmojiSheet(isDarkMode),
+              ),
+              IconButton(
+                  icon: Icon(Icons.image, color: textColor),
+                  onPressed: _pickImage),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
 }

@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -25,14 +24,6 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final _nameController = TextEditingController();
   final picker = ImagePicker();
-  final List<Color> themeOptions = [
-    Colors.blue,
-    Colors.red,
-    Colors.green,
-    Colors.purple,
-    Colors.orange,
-  ];
-
   late final String uid;
 
   @override
@@ -64,7 +55,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final url = await ref.getDownloadURL();
 
     await FirebaseFirestore.instance.collection('users').doc(uid).set(
-      {'chatBgType': 'image', 'chatBgUrl': url, 'chatBgColor': 0},
+      {'photoUrl': url},
       SetOptions(merge: true),
     );
   }
@@ -72,6 +63,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final uid = widget.currentUserId;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
@@ -80,12 +72,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final photoUrl = data['photoUrl'] as String? ?? "";
         final int? currentSeed = data['themeColor'] as int?;
         final bool isOnlineVisible = data['isOnlineVisible'] ?? true;
-        final String bgType = data['chatBgType'] ?? 'color';
-        final int bgColor = data['chatBgColor'] ?? 0xFFFFFFFF;
-        final String bgUrl = data['chatBgUrl'] ?? "";
+        final bool isDarkMode = data['isDarkMode'] ?? false;
+
+        final background = isDarkMode ? Colors.grey[900] : Colors.grey[50];
+        final cardColor = isDarkMode ? Colors.black : Colors.white;
+        final textColor = isDarkMode ? Colors.white : Colors.black;
 
         return Scaffold(
-          appBar: AppBar(title: const Text("Ayarlar")),
+          appBar: AppBar(
+            title: Text("Ayarlar", style: TextStyle(color: textColor)),
+            backgroundColor: cardColor,
+            iconTheme: IconThemeData(color: textColor),
+          ),
+          backgroundColor: background,
           body: ListView(
             padding: const EdgeInsets.all(16),
             children: [
@@ -96,7 +95,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   child: CircleAvatar(
                     radius: 40,
                     backgroundImage: photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
-                    child: photoUrl.isEmpty ? const Icon(Icons.person, size: 40) : null,
+                    child: photoUrl.isEmpty
+                        ? Icon(Icons.person, size: 40, color: textColor)
+                        : null,
                   ),
                 ),
               ),
@@ -105,12 +106,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
               // Profil Adı
               TextField(
                 controller: _nameController,
-                decoration: const InputDecoration(labelText: "Profil Adı"),
+                style: TextStyle(color: textColor),
+                decoration: InputDecoration(
+                  labelText: "Profil Adı",
+                  labelStyle: TextStyle(color: textColor),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: textColor.withOpacity(0.5)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: textColor),
+                  ),
+                ),
                 onSubmitted: (_) => _updateProfileName(uid),
               ),
 
               const SizedBox(height: 24),
-              const Text("Tema Rengi", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              Text("Tema Rengi",
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w600, color: textColor)),
+              const SizedBox(height: 12),
               Wrap(
                 spacing: 12,
                 runSpacing: 12,
@@ -133,7 +147,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
               const SizedBox(height: 24),
               SwitchListTile(
-                title: const Text("Online Durumunu Göster"),
+                title: Text("Online Durumunu Göster", style: TextStyle(color: textColor)),
+                activeColor: Colors.blue,
                 value: isOnlineVisible,
                 onChanged: (val) async {
                   await FirebaseFirestore.instance.collection('users').doc(uid).set(
@@ -144,53 +159,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
 
               const SizedBox(height: 24),
-              const Text("Sohbet Arkaplanı", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-              ListTile(
-                title: const Text("Varsayılan Renk"),
-                leading: Radio<String>(
-                  value: 'color',
-                  groupValue: bgType,
-                  onChanged: (val) async {
-                    await FirebaseFirestore.instance.collection('users').doc(uid).set(
-                      {'chatBgType': 'color', 'chatBgColor': 0xFFFFFFFF, 'chatBgUrl': ''},
-                      SetOptions(merge: true),
-                    );
-                  },
-                ),
-              ),
-              ListTile(
-                title: const Text("Resim Yükle"),
-                leading: Radio<String>(
-                  value: 'image',
-                  groupValue: bgType,
-                  onChanged: (val) async {
-                    final picked = await picker.pickImage(source: ImageSource.gallery);
-                    if (picked != null) {
-                      final file = File(picked.path);
-                      final ref = FirebaseStorage.instance.ref().child('chat_backgrounds/$uid.jpg');
-                      await ref.putFile(file);
-                      final url = await ref.getDownloadURL();
-
-                      await FirebaseFirestore.instance.collection('users').doc(uid).set(
-                        {'chatBgType': 'image', 'chatBgUrl': url},
-                        SetOptions(merge: true),
-                      );
-                    }
-                  },
-                ),
-              ),
-              const SizedBox(height: 24),
               SwitchListTile(
-                title: const Text("Karanlık Mod"),
-                value: data['isDarkMode'] ?? false,
+                title: Text("Karanlık Mod", style: TextStyle(color: textColor)),
+                activeColor: Colors.blue,
+                value: isDarkMode,
                 onChanged: (val) async {
-                  await FirebaseFirestore.instance
-                      .collection('users')
-                      .doc(uid)
-                      .set({'isDarkMode': val}, SetOptions(merge: true));
+                  await FirebaseFirestore.instance.collection('users').doc(uid).set(
+                    {'isDarkMode': val},
+                    SetOptions(merge: true),
+                  );
                 },
               ),
-
             ],
           ),
         );

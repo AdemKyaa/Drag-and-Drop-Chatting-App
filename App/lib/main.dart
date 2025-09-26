@@ -30,44 +30,63 @@ class MyApp extends StatelessWidget {
         }
 
         return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-          stream: FirebaseFirestore.instance.collection('users').doc(user.uid).snapshots(),
+          stream: FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .snapshots(),
           builder: (context, snap) {
             final data = snap.data?.data() ?? {};
-            final int seed = (data['themeColor'] as int?) ?? 0xFF2962FF;
 
-            final lightScheme = ColorScheme.fromSeed(seedColor: Color(seed));
+            // Firestore’dan gelen ayarlar
+            final int seed = (data['themeColor'] as int?) ?? 0xFF2962FF;
+            final bool isDark = data['isDarkMode'] ?? false;
+
+            // Tema renkleri
+            final lightScheme = ColorScheme.fromSeed(
+              seedColor: Color(seed),
+              brightness: Brightness.light,
+            );
+
             final darkScheme = ColorScheme.fromSeed(
               seedColor: Color(seed),
               brightness: Brightness.dark,
             );
 
-            final isDark = data['isDarkMode'] ?? false;
-
             return MaterialApp(
               debugShowCheckedModeBanner: false,
               themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
+
+              // 🔹 Light tema (beyaz tonları)
               theme: ThemeData(
                 useMaterial3: true,
                 colorScheme: lightScheme,
+                scaffoldBackgroundColor: Colors.grey[50],
                 appBarTheme: AppBarTheme(
-                  backgroundColor: lightScheme.primary,
-                  foregroundColor: lightScheme.onPrimary,
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black,
+                  elevation: 0,
                 ),
               ),
+
+              // 🔹 Dark tema (siyah tonları)
               darkTheme: ThemeData(
                 useMaterial3: true,
                 colorScheme: darkScheme,
+                scaffoldBackgroundColor: Colors.grey[900],
                 appBarTheme: AppBarTheme(
-                  backgroundColor: darkScheme.primary,
-                  foregroundColor: darkScheme.onPrimary,
+                  backgroundColor: Colors.black,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
                 ),
               ),
+
               routes: {
                 '/settings': (context) {
                   final uid = FirebaseAuth.instance.currentUser?.uid ?? "";
                   return SettingsScreen(currentUserId: uid);
                 },
               },
+
               home: UserListScreen(currentUserId: user.uid),
             );
           },

@@ -863,21 +863,21 @@ Widget build(BuildContext context) {
         widget.onUpdate();
       },
       onPanEnd: (details) {
-      widget.onInteract?.call(false);
+        widget.onInteract?.call(false);
 
-      // ✅ parmağın son pozisyonunu kullan
-      final releasePos = details.velocity.pixelsPerSecond == Offset.zero
-          ? _lastGlobalPoint
-          : _lastGlobalPoint;
+        // ✅ parmağın son pozisyonunu kullan
+        final releasePos = details.velocity.pixelsPerSecond == Offset.zero
+            ? _lastGlobalPoint
+            : _lastGlobalPoint;
 
-      if (releasePos != null && widget.isOverTrash(releasePos)) {
-        widget.onDelete();
-      } else {
-        widget.onSave();
-      }
+        if (releasePos != null && widget.isOverTrash(releasePos)) {
+          widget.onDelete();
+        } else {
+          widget.onSave();
+        }
 
-      widget.onDraggingOverTrash?.call(false);
-    },
+        widget.onDraggingOverTrash?.call(false);
+      },
       child: Transform.scale(
         scale: b.scale ?? 1.0,
         child: Stack(

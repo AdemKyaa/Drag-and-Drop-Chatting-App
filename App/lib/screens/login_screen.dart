@@ -19,6 +19,7 @@ class _LoginScreenState extends State<LoginScreen> {
   String username = "";
   String password = "";
   bool _loading = false;
+  bool? _isDarkMode; // ✅ başta null → sistemden alınacak
 
   Future<void> login() async {
     setState(() => _loading = true);
@@ -63,26 +64,77 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ Eğer _isDarkMode null ise → sistemi oku
+    final isDark =
+        _isDarkMode ?? MediaQuery.of(context).platformBrightness == Brightness.dark;
+
+    final background = isDark ? Colors.grey[900] : Colors.grey[50];
+    final cardColor = isDark ? Colors.grey[850]! : Colors.white;
+    final textColor = isDark ? Colors.white : Colors.black;
+
     return Scaffold(
-      appBar: AppBar(title: const Text("Giriş Yap")),
+      appBar: AppBar(
+        title: Text("Giriş Yap", style: TextStyle(color: textColor)),
+        backgroundColor: cardColor,
+        iconTheme: IconThemeData(color: textColor),
+        actions: [
+          IconButton(
+            icon: Icon(
+              isDark ? Icons.dark_mode : Icons.light_mode,
+              color: textColor,
+            ),
+            onPressed: () {
+              setState(() {
+                _isDarkMode = !isDark; // ✅ sistemi ez, kullanıcı seçsin
+              });
+            },
+          ),
+        ],
+      ),
+      backgroundColor: background,
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
             TextField(
-              decoration: const InputDecoration(labelText: "Kullanıcı adı"),
+              style: TextStyle(color: textColor),
+              decoration: InputDecoration(
+                labelText: "Kullanıcı adı",
+                labelStyle: TextStyle(color: textColor),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: textColor.withOpacity(0.5)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: textColor),
+                ),
+              ),
               onChanged: (val) => username = val.trim(),
             ),
+            const SizedBox(height: 12),
             TextField(
-              decoration: const InputDecoration(labelText: "Şifre"),
+              style: TextStyle(color: textColor),
               obscureText: true,
+              decoration: InputDecoration(
+                labelText: "Şifre",
+                labelStyle: TextStyle(color: textColor),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: textColor.withOpacity(0.5)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: textColor),
+                ),
+              ),
               onChanged: (val) => password = val.trim(),
             ),
             const SizedBox(height: 20),
             ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: cardColor,
+                foregroundColor: textColor,
+              ),
               onPressed: _loading ? null : login,
               child: _loading
-                  ? const CircularProgressIndicator()
+                  ? CircularProgressIndicator(color: textColor)
                   : const Text("Giriş Yap"),
             ),
             TextButton(
@@ -92,7 +144,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   MaterialPageRoute(builder: (_) => const RegisterScreen()),
                 );
               },
-              child: const Text("Hesabın yok mu? Kayıt ol"),
+              child: Text(
+                "Hesabın yok mu? Kayıt ol",
+                style: TextStyle(color: textColor),
+              ),
             ),
           ],
         ),

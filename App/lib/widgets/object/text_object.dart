@@ -19,6 +19,7 @@ class TextObject extends StatefulWidget {
   final void Function(BoxItem box, int pointerId, Offset globalPos)? onPrimaryPointerDown;
   final VoidCallback? onBringToFront;
   final VoidCallback? onSendToBack;
+  final bool isDarkMode; // ✅ Dark mode bilgisi parametreyle geliyor
 
   const TextObject({
     super.key,
@@ -35,6 +36,7 @@ class TextObject extends StatefulWidget {
     this.onPrimaryPointerDown,
     this.onBringToFront,
     this.onSendToBack,
+    required this.isDarkMode,
   });
 
   @override
@@ -239,6 +241,7 @@ class _TextObjectState extends State<TextObject> {
         onSave: widget.onSave,
         onBringToFront: widget.onBringToFront,
         onSendToBack: widget.onSendToBack,
+        isDarkMode: widget.isDarkMode,
       ),
     );
   }

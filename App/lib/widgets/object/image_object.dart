@@ -18,6 +18,7 @@ class ImageObject extends StatefulWidget {
   final void Function(bool)? onDraggingOverTrash;
   final void Function(bool)? onInteract;
   final void Function(BoxItem box, int pointerId, Offset globalPos)? onPrimaryPointerDown;
+  final bool isDarkMode; // ✅ Dark mode bilgisi parametreyle geliyor
 
   // z-index
   final VoidCallback? onBringToFront;
@@ -37,6 +38,7 @@ class ImageObject extends StatefulWidget {
     this.onPrimaryPointerDown,
     this.onBringToFront,
     this.onSendToBack,
+    required this.isDarkMode,
   });
 
   @override
@@ -143,6 +145,7 @@ class _ImageObjectState extends State<ImageObject> {
                   onSave: widget.onSave,
                   onBringToFront: widget.onBringToFront,
                   onSendToBack: widget.onSendToBack,
+                  isDarkMode: widget.isDarkMode,
                 ),
               );
             },
