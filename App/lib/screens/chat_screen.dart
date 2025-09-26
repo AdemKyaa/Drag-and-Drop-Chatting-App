@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-
 import '../models/box_item.dart';
 import '../widgets/object/text_object.dart';
 import '../widgets/object/image_object.dart';
@@ -12,7 +11,6 @@ import '../widgets/delete_area.dart';
 import '../widgets/panels/toolbar_panel.dart';
 import '../widgets/panels/emoji_edit_panel.dart';
 import '../widgets/object/resizable_emoji_box.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart' as ep;
 
 class ChatScreen extends StatefulWidget {
@@ -196,10 +194,12 @@ class _ChatScreenState extends State<ChatScreen> {
     double newWidth;
     double newHeight;
 
-    if (aspectRatio > 1) { // Geniş resim
+    if (aspectRatio > 1) {
+      // Geniş resim
       newWidth = maxSize;
       newHeight = maxSize / aspectRatio;
-    } else { // Yüksek veya kare resim
+    } else {
+      // Yüksek veya kare resim
       newHeight = maxSize;
       newWidth = maxSize * aspectRatio;
     }
@@ -293,8 +293,11 @@ class _ChatScreenState extends State<ChatScreen> {
           String ext = 'jpg';
           if (mimeType.contains('png')) {
             ext = 'png';
-          } else if (mimeType.contains('gif')) ext = 'gif';
-          else if (mimeType.contains('webp')) ext = 'webp';
+          } else if (mimeType.contains('gif')) {
+            ext = 'gif';
+          } else if (mimeType.contains('webp')) {
+            ext = 'webp';
+          }
 
           final ref = _storage.ref().child('${_chatId()}/${b.id}.$ext');
 
@@ -318,6 +321,7 @@ class _ChatScreenState extends State<ChatScreen> {
       debugPrint("📥 ${b.id} Firestore’a kaydedildi.");
     } catch (e) {
       debugPrint("❌ HATA! _saveBox başarısız: $e");
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Kaydetme hatası: $e")),
       );
@@ -337,22 +341,23 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     setState(() {});
   }
-    int _lineCount(BoxItem b, {double maxWidth = 2000}) {
-      final style = GoogleFonts.getFont(
-        b.fontFamily.isEmpty ? 'Roboto' : b.fontFamily,
-        textStyle: TextStyle(fontSize: b.fixedFontSize),
-      );
 
-      final span = TextSpan(style: style, children: b.styledSpans(style));
+  int _lineCount(BoxItem b, {double maxWidth = 2000}) {
+    final style = GoogleFonts.getFont(
+      b.fontFamily.isEmpty ? 'Roboto' : b.fontFamily,
+      textStyle: TextStyle(fontSize: b.fixedFontSize),
+    );
 
-      final tp = TextPainter(
-        text: span,
-        textDirection: TextDirection.ltr,
-        maxLines: null,
-      )..layout(maxWidth: maxWidth);
+    final span = TextSpan(style: style, children: b.styledSpans(style));
 
-      return tp.computeLineMetrics().length;
-    }
+    final tp = TextPainter(
+      text: span,
+      textDirection: TextDirection.ltr,
+      maxLines: null,
+    )..layout(maxWidth: maxWidth);
+
+    return tp.computeLineMetrics().length;
+  }
 
   Size measureText(BoxItem b, double maxWidth) {
     final baseStyle = GoogleFonts.getFont(
@@ -411,326 +416,357 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ],
       ),
-      body: Stack(
-        key: _stageKey,
-        children: [
-          Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: () {
-              setState(() {
-                for (final b in boxes) {
-                  b.isSelected = false;
-                }
-                _editingBox = null;
-              });
-            },
-          ),
-        ),
+      body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance
+            .collection('users')
+            .doc(widget.currentUserId) // kendi ayarını baz alıyoruz
+            .snapshots(),
+        builder: (context, snap) {
+          final data = snap.data?.data() ?? {};
+          final bgType = (data['chatBgType'] ?? 'color') as String;
+          final bgColorInt = (data['chatBgColor'] ?? 0xFFFFFFFF) as int;
+          final bgColor = Color(bgColorInt);
+          final bgUrl = data['chatBgUrl'] as String?;
 
-        // objeler
-        ...boxes.map((b) {
-          if (b.type == "textbox") {
-            return TextObject(
-              box: b,
-              displayLang: _targetLang,
-              isEditing: _editingBox == b,
-              onUpdate: () => setState(() {}),
-              onSave: () async {
-                await _saveBox(b);
-              },
-              onSelect: (edit) {
-                setState(() {
-                  for (final other in boxes) {
-                    other.isSelected = false; // diğerlerini bırak
-                  }
-                  b.isSelected = true;
-
-                  if (edit) {
-                    _editingBox = b;
-                  } else {
-                    _editingBox = null;
-                  }
-                });
-              },
-              onDelete: () async {
-                setState(() {
-                  boxes.remove(b);
-                  if (_editingBox == b) _editingBox = null;
-                });
-                await _messagesCol.doc(b.id).delete();
-              },
-              isOverTrash: _pointOverTrash,
-              onDraggingOverTrash: (v) => setState(() => _isOverTrash = v),
-              onInteract: (v) {},
-              onPrimaryPointerDown: (box, pid, globalPos) {
-                _beginPinchFromObject(box, pid, globalPos);
-              },
-              onBringToFront: () {
-                setState(() {
-                  final values = boxes.map((e) => (e.z is num) ? (e.z as num).toDouble() : 0.0);
-                  final maxZ = values.isEmpty ? 0.0 : values.reduce((a, c) => a > c ? a : c);
-                  b.z = (maxZ + 1).toInt();
-                  boxes.sort((a, b) => a.z.compareTo(b.z));
-                });
-                _saveBox(b);
-              },
-              onSendToBack: () {
-                setState(() {
-                  final values = boxes.map((e) => (e.z is num) ? (e.z as num).toDouble() : 0.0);
-                  final minZ = values.isEmpty ? 0.0 : values.reduce((a, c) => a < c ? a : c);
-                  b.z = (minZ - 1).toInt();
-                  boxes.sort((a, b) => a.z.compareTo(b.z));
-                });
-                _saveBox(b);
-              },
-            );
-          } else if (b.type == "image") {
-            return ImageObject(
-              box: b,
-              isEditing: false,
-              onUpdate: () => setState(() {}),
-              onSave: () async {
-                await _saveBox(b);
-              },
-              onSelect: (edit) {
-                setState(() {
-                  for (final other in boxes) {
-                    other.isSelected = false;
-                  }
-                  b.isSelected = true;
-                });
-              },
-              onDelete: () async {
-                setState(() => boxes.remove(b));
-                await _messagesCol.doc(b.id).delete();
-              },
-              isOverTrash: _pointOverTrash,
-              onDraggingOverTrash: (v) => setState(() => _isOverTrash = v),
-              onInteract: (_) {},
-
-              onPrimaryPointerDown: (box, pid, globalPos) {
-                _beginPinchFromObject(box, pid, globalPos);
-              },
-
-              onBringToFront: () {
-                setState(() {
-                  final values = boxes.map((e) => (e.z is num) ? (e.z as num).toDouble() : 0.0);
-                  final maxZ = values.isEmpty ? 0.0 : values.reduce((a, c) => a > c ? a : c);
-                  b.z = (maxZ + 1).toInt();
-                  boxes.sort((a, b) => a.z.compareTo(b.z));
-                });
-                _saveBox(b);
-              },
-              onSendToBack: () {
-                setState(() {
-                  final values = boxes.map((e) => (e.z is num) ? (e.z as num).toDouble() : 0.0);
-                  final minZ = values.isEmpty ? 0.0 : values.reduce((a, c) => a < c ? a : c);
-                  b.z = (minZ - 1).toInt();
-                  boxes.sort((a, b) => a.z.compareTo(b.z));
-                });
-                _saveBox(b);
-              },
-            );
-          }else if (b.type == "emoji") {
-            return ResizableEmojiBox(
-              box: b,
-              isEditing: _editingBox == b,
-              onUpdate: () => setState(() {}),
-              onSave: () async => _saveBox(b),
-              onSelect: (edit) {
-                setState(() {
-                  for (final other in boxes) {
-                    other.isSelected = false;
-                  }
-                  b.isSelected = true;
-
-                  if (edit) {
-                    _editingBox = b; // ✅ çift tık → edit panel açılır
-                  } else {
-                    _editingBox = null;
-                  }
-                });
-              },
-              onDelete: () async {
-                setState(() => boxes.remove(b));
-                await _messagesCol.doc(b.id).delete();
-              },
-              isOverTrash: _pointOverTrash, // ✅ gerçek kontrol
-              onDraggingOverTrash: (v) => setState(() => _isOverTrash = v),
-            );
-          }
-            return const SizedBox.shrink();
-          }),
-
-          Positioned.fill(
-            child: Listener(
-              behavior: HitTestBehavior.translucent,
-              onPointerDown: (e) {
-                // Eğer bir obje üzerinde “bir parmak” zaten basılı ise ve ikinci parmak yoksa:
-                if (_pinchTarget != null && _pinchPrimaryId != null && _pinchSecondaryId == null) {
-                  // İkinci parmak bu obje DIŞINA mı geldi?
-                  if (!_pointInsideRotatedBox(_pinchTarget!, e.position)) {
-                    _pinchSecondaryId = e.pointer;
-                    _pinchSecondaryStartGlobal = e.position;
-
-                    // iki parmak arasındaki ilk vektör (primary -> secondary)
-                    final p1 = _pinchPrimaryStartGlobal!;
-                    final p2 = _pinchSecondaryStartGlobal!;
-                    final v = p2 - p1;
-                    _pinchStartDistance = v.distance;
-                    _pinchStartAngle = v.direction; // atan2
-
-                    _overlayPinchActive = true;
-                  }
-                }
-              },
-              onPointerMove: (e) {
-                // Sadece overlay pinch modunda işliyoruz (ikinci parmak obje dışında)
-                if (_overlayPinchActive && _pinchTarget != null && _pinchPrimaryId != null && _pinchSecondaryId != null) {
-                  // Primary veya secondary hareket ettiyse güncelle
-                  if (e.pointer == _pinchPrimaryId) {
-                    _pinchPrimaryStartGlobal = e.position;
-                  } else if (e.pointer == _pinchSecondaryId) {
-                    _pinchSecondaryStartGlobal = e.position;
-                  }
-
-                  final p1 = _pinchPrimaryStartGlobal!;
-                  final p2 = _pinchSecondaryStartGlobal!;
-
-                  final v = p2 - p1;
-                  final dist = v.distance.clamp(0.001, 1e6);
-                  final ang = v.direction;
-
-                  final scale = (dist / (_pinchStartDistance == 0 ? dist : _pinchStartDistance)).clamp(0.1, 100.0);
-                  final deltaAng = ang - _pinchStartAngle;
-
-                  final b = _pinchTarget!;
-                  if (b.type == 'textbox') {
-                    measureText(b, 2000);
-                    final lineCount = _lineCount(b);
-
-                    const padH = 32.0, padV = 24.0;
-
-                    b.fixedFontSize = (_pinchStartFont * scale).clamp(8.0, 300.0);
-
-                    final scaledTextSize = measureText(b, 2000);
-
-                    b.width = (scaledTextSize.width + padH).clamp(24.0, 4096.0);
-                    b.height = (lineCount * b.fixedFontSize * 1.2 + padV).clamp(24.0, 4096.0);
-                    b.rotation = _pinchStartRot + deltaAng;
-                  } else if (b.type == 'image') {
-                    b.width  = (_pinchStartW * scale).clamp(32.0, 4096.0);
-                    b.height = (_pinchStartH * scale).clamp(32.0, 4096.0);
-                    b.rotation = _pinchStartRot + deltaAng;
-                  }else if (b.type == 'emoji') {
-                    b.fixedFontSize = (_pinchStartFont * scale).clamp(16.0, 300.0);
-                    b.rotation = _pinchStartRot + deltaAng;
-                  }
-                  setState(() {}); // anlık yansıt
-                }
-              },
-              onPointerUp: (e) {
-                if (e.pointer == _pinchSecondaryId) {
-                  _pinchSecondaryId = null;
-                  _pinchSecondaryStartGlobal = null;
-                  _overlayPinchActive = false;
-                }
-                if (e.pointer == _pinchPrimaryId) {
-                  final b = _pinchTarget;
-                  if (b != null) {
-                    _saveBox(b); // Firestore’a yaz
-                  }
-                  // tüm pinchi bitir
-                  _pinchTarget = null;
-                  _pinchPrimaryId = null;
-                  _pinchPrimaryStartGlobal = null;
-                  _pinchSecondaryId = null;
-                  _pinchSecondaryStartGlobal = null;
-                  _overlayPinchActive = false;
-                }
-              },
-              onPointerCancel: (e) {
-                if (e.pointer == _pinchSecondaryId) {
-                  _pinchSecondaryId = null;
-                  _pinchSecondaryStartGlobal = null;
-                  _overlayPinchActive = false;
-                }
-                if (e.pointer == _pinchPrimaryId) {
-                  _pinchTarget = null;
-                  _pinchPrimaryId = null;
-                  _pinchPrimaryStartGlobal = null;
-                  _pinchSecondaryId = null;
-                  _pinchSecondaryStartGlobal = null;
-                  _overlayPinchActive = false;
-                }
-              },
-            ),
-          ),
-
-          // çöp alanı
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: DeleteArea(
-              key: _trashKey,
-              isActive: _isOverTrash,
-              onOverChange: (v) => setState(() => _isOverTrash = v),
-              onDrop: _handleDrop,
-            ),
-          ),
-
-          // Toolbar panel (TextObject içinden zaten açılıyor/kapaniyor olabilir; varsa koruyun)
-          if (_editingBox != null && _editingBox!.type == "textbox")
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: ToolbarPanel(
-                box: _editingBox!,
-                onUpdate: () => setState(() {}),
-                onSave: () async {
-                  final b = _editingBox!;
-                  setState(() => _editingBox = null);
-                  await _translateAndSaveFor(b);
-                },
-                onClose: () => setState(() => _editingBox = null),
+          return Stack(
+            key: _stageKey,
+            children: [
+              // 1) Arkaplan (en altta)
+              Positioned.fill(
+                child: bgType == 'image' && (bgUrl?.isNotEmpty ?? false)
+                    ? DecoratedBox(
+                        decoration: BoxDecoration(
+                          image: DecorationImage(
+                            image: NetworkImage(bgUrl!),
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                      )
+                    : Container(color: bgColor),
               ),
-            )
-          else if (_editingBox != null && _editingBox!.type == "emoji")
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: EmojiEditPanel(
-                box: _editingBox!,
-                onUpdate: () => setState(() {}),
-                onSave: () async {
-                  final b = _editingBox!;
-                  setState(() => _editingBox = null);
-                  await _saveBox(b);
-                },
-                onClose: () => setState(() => _editingBox = null),
-                onBringToFront: () {
-                  setState(() {
-                    final values = boxes.map((e) => (e.z is num) ? (e.z as num).toDouble() : 0.0);
-                    final maxZ = values.isEmpty ? 0.0 : values.reduce((a, c) => a > c ? a : c);
-                    _editingBox!.z = (maxZ + 1).toInt();
-                    boxes.sort((a, b) => a.z.compareTo(b.z));
-                  });
-                  _saveBox(_editingBox!);
-                },
-                onSendToBack: () {
-                  setState(() {
-                    final values = boxes.map((e) => (e.z is num) ? (e.z as num).toDouble() : 0.0);
-                    final minZ = values.isEmpty ? 0.0 : values.reduce((a, c) => a < c ? a : c);
-                    _editingBox!.z = (minZ - 1).toInt();
-                    boxes.sort((a, b) => a.z.compareTo(b.z));
-                  });
-                  _saveBox(_editingBox!);
-                },
+
+              // 2) Boş alana basınca seçimleri kaldır
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: () {
+                    setState(() {
+                      for (final b in boxes) {
+                        b.isSelected = false;
+                      }
+                      _editingBox = null;
+                    });
+                  },
+                ),
               ),
-            )
-        ],
+
+              // 3) Objeler (textbox / image / emoji)
+              ...boxes.map((b) {
+                if (b.type == "textbox") {
+                  return TextObject(
+                    box: b,
+                    displayLang: _targetLang,
+                    isEditing: _editingBox == b,
+                    onUpdate: () => setState(() {}),
+                    onSave: () async => _saveBox(b),
+                    onSelect: (edit) {
+                      setState(() {
+                        for (final other in boxes) {
+                          other.isSelected = false;
+                        }
+                        b.isSelected = true;
+                        _editingBox = edit ? b : null;
+                      });
+                    },
+                    onDelete: () async {
+                      setState(() {
+                        boxes.remove(b);
+                        if (_editingBox == b) _editingBox = null;
+                      });
+                      await _messagesCol.doc(b.id).delete();
+                    },
+                    isOverTrash: _pointOverTrash,
+                    onDraggingOverTrash: (v) => setState(() => _isOverTrash = v),
+                    onInteract: (_) {},
+                    onPrimaryPointerDown: (box, pid, globalPos) {
+                      _beginPinchFromObject(box, pid, globalPos);
+                    },
+                    onBringToFront: () {
+                      setState(() {
+                        final maxZ = boxes.isEmpty
+                            ? 0
+                            : boxes.map((e) => e.z).reduce((a, c) => a > c ? a : c);
+                        b.z = maxZ + 1;
+                        boxes.sort((a, c) => a.z.compareTo(c.z));
+                      });
+                      _saveBox(b);
+                    },
+                    onSendToBack: () {
+                      setState(() {
+                        final minZ = boxes.isEmpty
+                            ? 0
+                            : boxes.map((e) => e.z).reduce((a, c) => a < c ? a : c);
+                        b.z = minZ - 1;
+                        boxes.sort((a, c) => a.z.compareTo(c.z));
+                      });
+                      _saveBox(b);
+                    },
+                  );
+                } else if (b.type == "image") {
+                  return ImageObject(
+                    box: b,
+                    isEditing: false,
+                    onUpdate: () => setState(() {}),
+                    onSave: () async => _saveBox(b),
+                    onSelect: (_) {
+                      setState(() {
+                        for (final other in boxes) {
+                          other.isSelected = false;
+                        }
+                        b.isSelected = true;
+                      });
+                    },
+                    onDelete: () async {
+                      setState(() => boxes.remove(b));
+                      await _messagesCol.doc(b.id).delete();
+                    },
+                    isOverTrash: _pointOverTrash,
+                    onDraggingOverTrash: (v) => setState(() => _isOverTrash = v),
+                    onInteract: (_) {},
+                    onPrimaryPointerDown: (box, pid, globalPos) {
+                      _beginPinchFromObject(box, pid, globalPos);
+                    },
+                    onBringToFront: () {
+                      setState(() {
+                        final maxZ = boxes.isEmpty
+                            ? 0
+                            : boxes.map((e) => e.z).reduce((a, c) => a > c ? a : c);
+                        b.z = maxZ + 1;
+                        boxes.sort((a, c) => a.z.compareTo(c.z));
+                      });
+                      _saveBox(b);
+                    },
+                    onSendToBack: () {
+                      setState(() {
+                        final minZ = boxes.isEmpty
+                            ? 0
+                            : boxes.map((e) => e.z).reduce((a, c) => a < c ? a : c);
+                        b.z = minZ - 1;
+                        boxes.sort((a, c) => a.z.compareTo(c.z));
+                      });
+                      _saveBox(b);
+                    },
+                  );
+                } else if (b.type == "emoji") {
+                  return ResizableEmojiBox(
+                    box: b,
+                    isEditing: _editingBox == b,
+                    onUpdate: () => setState(() {}),
+                    onSave: () async => _saveBox(b),
+                    onSelect: (edit) {
+                      setState(() {
+                        for (final other in boxes) {
+                          other.isSelected = false;
+                        }
+                        b.isSelected = true;
+                        _editingBox = edit ? b : null;
+                      });
+                    },
+                    onDelete: () async {
+                      setState(() => boxes.remove(b));
+                      await _messagesCol.doc(b.id).delete();
+                    },
+                    isOverTrash: _pointOverTrash,
+                    onDraggingOverTrash: (v) => setState(() => _isOverTrash = v),
+                    onPrimaryPointerDown: (box, pid, globalPos) {
+                      _beginPinchFromObject(box, pid, globalPos);
+                    },
+                    onBringToFront: () {
+                      setState(() {
+                        final maxZ = boxes.isEmpty
+                            ? 0
+                            : boxes.map((e) => e.z).reduce((a, c) => a > c ? a : c);
+                        b.z = maxZ + 1;
+                        boxes.sort((a, c) => a.z.compareTo(c.z));
+                      });
+                      _saveBox(b);
+                    },
+                    onSendToBack: () {
+                      setState(() {
+                        final minZ = boxes.isEmpty
+                            ? 0
+                            : boxes.map((e) => e.z).reduce((a, c) => a < c ? a : c);
+                        b.z = minZ - 1;
+                        boxes.sort((a, c) => a.z.compareTo(c.z));
+                      });
+                      _saveBox(b);
+                    },
+                  );
+                }
+                return const SizedBox.shrink();
+              }).toList(),
+
+              // 4) İki parmakla global pinch/rotate dinleyicisi
+              Positioned.fill(
+                child: Listener(
+                  behavior: HitTestBehavior.translucent,
+                  onPointerDown: (e) {
+                    if (_pinchTarget != null &&
+                        _pinchPrimaryId != null &&
+                        _pinchSecondaryId == null) {
+                      if (!_pointInsideRotatedBox(_pinchTarget!, e.position)) {
+                        _pinchSecondaryId = e.pointer;
+                        _pinchSecondaryStartGlobal = e.position;
+                        final p1 = _pinchPrimaryStartGlobal!;
+                        final p2 = _pinchSecondaryStartGlobal!;
+                        final v = p2 - p1;
+                        _pinchStartDistance = v.distance;
+                        _pinchStartAngle = v.direction;
+                        _overlayPinchActive = true;
+                      }
+                    }
+                  },
+                  onPointerMove: (e) {
+                    if (_overlayPinchActive &&
+                        _pinchTarget != null &&
+                        _pinchPrimaryId != null &&
+                        _pinchSecondaryId != null) {
+                      if (e.pointer == _pinchPrimaryId) {
+                        _pinchPrimaryStartGlobal = e.position;
+                      } else if (e.pointer == _pinchSecondaryId) {
+                        _pinchSecondaryStartGlobal = e.position;
+                      }
+                      final p1 = _pinchPrimaryStartGlobal!;
+                      final p2 = _pinchSecondaryStartGlobal!;
+                      final v = p2 - p1;
+                      final dist = v.distance.clamp(0.001, 1e6);
+                      final ang = v.direction;
+
+                      final scale = (dist / (_pinchStartDistance == 0 ? dist : _pinchStartDistance)).clamp(0.1, 100.0);
+                      final deltaAng = ang - _pinchStartAngle;
+
+                      final b = _pinchTarget!;
+                      if (b.type == 'textbox') {
+                        final lineCount = _lineCount(b);
+                        const padH = 32.0, padV = 24.0;
+                        b.fixedFontSize = (_pinchStartFont * scale).clamp(8.0, 300.0);
+                        final scaledTextSize = measureText(b, 2000);
+                        b.width = (scaledTextSize.width + padH).clamp(24.0, 4096.0);
+                        b.height = (lineCount * b.fixedFontSize * 1.2 + padV).clamp(24.0, 4096.0);
+                        b.rotation = _pinchStartRot + deltaAng;
+                      } else if (b.type == 'image') {
+                        b.width = (_pinchStartW * scale).clamp(32.0, 4096.0);
+                        b.height = (_pinchStartH * scale).clamp(32.0, 4096.0);
+                        b.rotation = _pinchStartRot + deltaAng;
+                      } else if (b.type == 'emoji') {
+                        b.fixedFontSize = (_pinchStartFont * scale).clamp(16.0, 300.0);
+                        b.rotation = _pinchStartRot + deltaAng;
+                      }
+                      setState(() {});
+                    }
+                  },
+                  onPointerUp: (e) {
+                    if (e.pointer == _pinchSecondaryId) {
+                      _pinchSecondaryId = null;
+                      _pinchSecondaryStartGlobal = null;
+                      _overlayPinchActive = false;
+                    }
+                    if (e.pointer == _pinchPrimaryId) {
+                      final b = _pinchTarget;
+                      if (b != null) _saveBox(b);
+                      _pinchTarget = null;
+                      _pinchPrimaryId = null;
+                      _pinchPrimaryStartGlobal = null;
+                      _pinchSecondaryId = null;
+                      _pinchSecondaryStartGlobal = null;
+                      _overlayPinchActive = false;
+                    }
+                  },
+                  onPointerCancel: (e) {
+                    if (e.pointer == _pinchSecondaryId) {
+                      _pinchSecondaryId = null;
+                      _pinchSecondaryStartGlobal = null;
+                      _overlayPinchActive = false;
+                    }
+                    if (e.pointer == _pinchPrimaryId) {
+                      _pinchTarget = null;
+                      _pinchPrimaryId = null;
+                      _pinchPrimaryStartGlobal = null;
+                      _pinchSecondaryId = null;
+                      _pinchSecondaryStartGlobal = null;
+                      _overlayPinchActive = false;
+                    }
+                  },
+                ),
+              ),
+
+              // 5) Çöp alanı
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: DeleteArea(
+                  key: _trashKey,
+                  isActive: _isOverTrash,
+                  onOverChange: (v) => setState(() => _isOverTrash = v),
+                  onDrop: _handleDrop,
+                ),
+              ),
+
+              // 6) Paneller
+              if (_editingBox != null && _editingBox!.type == "textbox")
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: ToolbarPanel(
+                    box: _editingBox!,
+                    onUpdate: () => setState(() {}),
+                    onSave: () async {
+                      final b = _editingBox!;
+                      setState(() => _editingBox = null);
+                      await _translateAndSaveFor(b);
+                    },
+                    onClose: () => setState(() => _editingBox = null),
+                  ),
+                )
+              else if (_editingBox != null && _editingBox!.type == "emoji")
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: EmojiEditPanel(
+                    box: _editingBox!,
+                    onUpdate: () => setState(() {}),
+                    onSave: () async {
+                      final b = _editingBox!;
+                      setState(() => _editingBox = null);
+                      await _saveBox(b);
+                    },
+                    onClose: () => setState(() => _editingBox = null),
+                    onBringToFront: () {
+                      setState(() {
+                        final maxZ = boxes.isEmpty
+                            ? 0
+                            : boxes.map((e) => e.z).reduce((a, c) => a > c ? a : c);
+                        _editingBox!.z = maxZ + 1;
+                        boxes.sort((a, c) => a.z.compareTo(c.z));
+                      });
+                      _saveBox(_editingBox!);
+                    },
+                    onSendToBack: () {
+                      setState(() {
+                        final minZ = boxes.isEmpty
+                            ? 0
+                            : boxes.map((e) => e.z).reduce((a, c) => a < c ? a : c);
+                        _editingBox!.z = minZ - 1;
+                        boxes.sort((a, c) => a.z.compareTo(c.z));
+                      });
+                      _saveBox(_editingBox!);
+                    },
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }

@@ -18,8 +18,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
   String username = "";
   String password = "";
+  bool _loading = false;
 
   Future<void> login() async {
+    setState(() => _loading = true);
+
     try {
       final query = await users.where("username", isEqualTo: username).get();
 
@@ -31,7 +34,10 @@ class _LoginScreenState extends State<LoginScreen> {
         final valid = BCrypt.checkpw(password, storedHash);
 
         if (valid) {
-          await users.doc(userDoc.id).update({"isOnline": true});
+          await users.doc(userDoc.id).update({
+            "isOnline": true,
+            "lastSeen": FieldValue.serverTimestamp(),
+          });
 
           Navigator.pushReplacement(
             context,
@@ -42,6 +48,7 @@ class _LoginScreenState extends State<LoginScreen> {
           return;
         }
       }
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("❌ Hatalı kullanıcı adı veya şifre")),
       );
@@ -49,6 +56,8 @@ class _LoginScreenState extends State<LoginScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("❌ Hata: $e")),
       );
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -62,15 +71,20 @@ class _LoginScreenState extends State<LoginScreen> {
           children: [
             TextField(
               decoration: const InputDecoration(labelText: "Kullanıcı adı"),
-              onChanged: (val) => username = val,
+              onChanged: (val) => username = val.trim(),
             ),
             TextField(
               decoration: const InputDecoration(labelText: "Şifre"),
               obscureText: true,
-              onChanged: (val) => password = val,
+              onChanged: (val) => password = val.trim(),
             ),
             const SizedBox(height: 20),
-            ElevatedButton(onPressed: login, child: const Text("Giriş Yap")),
+            ElevatedButton(
+              onPressed: _loading ? null : login,
+              child: _loading
+                  ? const CircularProgressIndicator()
+                  : const Text("Giriş Yap"),
+            ),
             TextButton(
               onPressed: () {
                 Navigator.push(
