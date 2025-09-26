@@ -16,39 +16,15 @@ class ResizeHandles extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const double s = 32; // handle boyutu
-    const double p = 16; // handle boyutu
+    const double p = 24; // handle boyutu
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        // 🔵 Sol-Üst
+        // 🔵 Üst-Ort
         Positioned(
-          left: -s / 2 + p,
+          left: box.width / 2 - s / 2 - 8,
           top: -s / 2 + p,
           child: _buildHandle((d) {
-            box.width = (box.width - d.delta.dx).clamp(32, 4096);
-            box.height = (box.height - d.delta.dy).clamp(32, 4096);
-            box.position += d.delta; // sola/üstte kaydırınca pozisyonu da düzelt
-            onUpdate();
-          }),
-        ),
-
-        // 🔵 Üst-Orta
-        Positioned(
-          left: box.width / 2 - s / 2,
-          top: -s / 2 + p,
-          child: _buildHandle((d) {
-            box.height = (box.height - d.delta.dy).clamp(32, 4096);
-            box.position += Offset(0, d.delta.dy);
-            onUpdate();
-          }),
-        ),
-
-        // 🔵 Sağ-Üst
-        Positioned(
-          right: -s / 2 + p,
-          top: -s / 2 + p,
-          child: _buildHandle((d) {
-            box.width = (box.width + d.delta.dx).clamp(32, 4096);
             box.height = (box.height - d.delta.dy).clamp(32, 4096);
             box.position += Offset(0, d.delta.dy);
             onUpdate();
@@ -58,52 +34,29 @@ class ResizeHandles extends StatelessWidget {
         // 🔵 Sol-Orta
         Positioned(
           left: -s / 2 + p,
-          top: box.height / 2 - s / 2,
+          top: box.height / 2 - s / 2 - 8,
           child: _buildHandle((d) {
             box.width = (box.width - d.delta.dx).clamp(32, 4096);
             box.position += Offset(d.delta.dx, 0);
             onUpdate();
-          }),
+          }, vertical: true),
         ),
 
         // 🔵 Sağ-Orta
         Positioned(
           right: -s / 2 + p,
-          top: box.height / 2 - s / 2,
+          top: box.height / 2 - s / 2 - 8,
           child: _buildHandle((d) {
             box.width = (box.width + d.delta.dx).clamp(32, 4096);
             onUpdate();
-          }),
-        ),
-
-        // 🔵 Sol-Alt
-        Positioned(
-          left: -s / 2 + p,
-          bottom: -s / 2 + p,
-          child: _buildHandle((d) {
-            box.width = (box.width - d.delta.dx).clamp(32, 4096);
-            box.height = (box.height + d.delta.dy).clamp(32, 4096);
-            box.position += Offset(d.delta.dx, 0);
-            onUpdate();
-          }),
+          }, vertical: true),
         ),
 
         // 🔵 Alt-Orta
         Positioned(
-          left: box.width / 2 - s / 2,
+          left: box.width / 2 - s / 2 - 8,
           bottom: -s / 2 + p,
           child: _buildHandle((d) {
-            box.height = (box.height + d.delta.dy).clamp(32, 4096);
-            onUpdate();
-          }),
-        ),
-
-        // 🔵 Sağ-Alt
-        Positioned(
-          right: -s / 2 + p,
-          bottom: -s / 2 + p,
-          child: _buildHandle((d) {
-            box.width = (box.width + d.delta.dx).clamp(32, 4096);
             box.height = (box.height + d.delta.dy).clamp(32, 4096);
             onUpdate();
           }),
@@ -112,19 +65,26 @@ class ResizeHandles extends StatelessWidget {
     );
   }
 
-  Widget _buildHandle(void Function(DragUpdateDetails) onDrag) {
-    const double s = 16;
+  Widget _buildHandle(
+    void Function(DragUpdateDetails) onDrag, {
+    bool vertical = false, // sağ/sol için true
+  }) {
+    const double longSide = 48;
+    const double shortSide = 12;
+
+    final child = Container(
+      width: vertical ? shortSide : longSide,
+      height: vertical ? longSide : shortSide,
+      decoration: BoxDecoration(
+        color: const Color.fromARGB(125, 33, 149, 243),
+        borderRadius: BorderRadius.circular(6),
+      ),
+    );
+
     return GestureDetector(
       onPanUpdate: onDrag,
       onPanEnd: (_) => onSave(),
-      child: Container(
-        width: s,
-        height: s,
-        decoration: BoxDecoration(
-          color: Colors.blue,
-          borderRadius: BorderRadius.circular(8),
-        ),
-      ),
+      child: child,
     );
   }
 }

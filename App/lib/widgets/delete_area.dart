@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 class DeleteArea extends StatelessWidget {
   final bool isActive;
-  final VoidCallback? onDrop;              // ✅ onAccept yerine onDrop
-  final ValueChanged<bool>? onOverChange;  // hover/over bildirimi için
+  final VoidCallback? onDrop;
+  final ValueChanged<bool>? onOverChange;
 
   const DeleteArea({
     super.key,
@@ -15,39 +15,19 @@ class DeleteArea extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const base = Colors.red;
-    final bg = base.withAlpha((isActive ? 0.15 : 0.08) * 255 ~/ 1); // ✅ withOpacity yerine withAlpha
 
-    return DragTarget<Object>(
-      onWillAcceptWithDetails: (_) {
-        onOverChange?.call(true);
-        return true;
-      },
-      onLeave: (_) => onOverChange?.call(false),
-      onAcceptWithDetails: (_) {                       // DragTarget’ın kendi onAccept’i
-        onOverChange?.call(false);
-        onDrop?.call();
-      },
-      builder: (_, __, ___) {
-        return Container(
-          height: 72,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: bg,
-            border: Border(top: BorderSide(color: base.withAlpha(64))),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.delete, color: base),
-              const SizedBox(width: 8),
-              Text(
-                isActive ? "Bırakırsan silinir" : "Buraya sürükleyip bırak → sil",
-                style: const TextStyle(color: base),
-              ),
-            ],
-          ),
-        );
-      },
+    return AnimatedScale(
+      scale: isActive ? 1.3 : 1.0, // üzerine gelince büyüsün
+      duration: const Duration(milliseconds: 200),
+      child: Container(
+        width: 64,
+        height: 64,
+        decoration: BoxDecoration(
+          color: isActive ? base.withOpacity(0.2) : base.withOpacity(0.1),
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(Icons.delete, color: base, size: 32),
+      ),
     );
   }
 }
