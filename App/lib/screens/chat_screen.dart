@@ -493,17 +493,73 @@ Widget build(BuildContext context) {
           ],
         ),
         backgroundColor: background,
-      body: Stack(
-      children: [Scrollbar(
-          controller: _scrollController,
-          thumbVisibility: true, // her zaman görünsün
-          child: SingleChildScrollView(
+        body: Stack(
+        children: [Scrollbar(
             controller: _scrollController,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                minHeight: maxBottom,
-                minWidth: screenSize.width,
-              ),
+            thumbVisibility: true, // her zaman görünsün
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              physics: _pinchTarget != null
+              ? const NeverScrollableScrollPhysics() // obje seçiliyse scroll kilitli
+              : const AlwaysScrollableScrollPhysics(), // değilse normal
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: maxBottom,
+                  minWidth: screenSize.width,
+                ),
+                child: Listener(
+              onPointerDown: (event) {
+                if (_pinchTarget != null && _pinchPrimaryId != event.pointer) {
+                  // ikinci parmak
+                  _pinchSecondaryId = event.pointer;
+                  _pinchSecondaryStartGlobal = event.position;
+                  _pinchStartDistance =
+                      (_pinchPrimaryStartGlobal! - _pinchSecondaryStartGlobal!).distance;
+                  _pinchStartAngle = atan2(
+                    _pinchSecondaryStartGlobal!.dy - _pinchPrimaryStartGlobal!.dy,
+                    _pinchSecondaryStartGlobal!.dx - _pinchPrimaryStartGlobal!.dx,
+                  );
+                }
+              },
+              onPointerMove: (event) {
+                if (_pinchTarget != null &&
+                    _pinchPrimaryStartGlobal != null &&
+                    event.pointer == _pinchSecondaryId) {
+                  final newDist =
+                      (_pinchPrimaryStartGlobal! - event.position).distance;
+                  final scale = newDist / _pinchStartDistance;
+
+                  setState(() {
+                    if (_pinchTarget!.type == "emoji") {
+                      // ✅ Emoji büyüyüp küçülsün
+                      _pinchTarget!.fixedFontSize = _pinchStartFont * scale;
+                    } else if (_pinchTarget!.type == "image") {
+                      // ✅ Image genişlik/yükseklik büyüsün
+                      _pinchTarget!.width = _pinchStartW * scale;
+                      _pinchTarget!.height = _pinchStartH * scale;
+                    }
+                    // ✅ Textbox sadece açı değişsin
+                    _pinchTarget!.rotation =
+                        _pinchStartRot +
+                        atan2(
+                          event.position.dy - _pinchPrimaryStartGlobal!.dy,
+                          event.position.dx - _pinchPrimaryStartGlobal!.dx,
+                        ) -
+                        _pinchStartAngle;
+                  });
+                }
+              },
+              onPointerUp: (event) {
+                if (event.pointer == _pinchPrimaryId ||
+                    event.pointer == _pinchSecondaryId) {
+                  if (_pinchTarget != null) {
+                    _saveBox(_pinchTarget!); // ✅ değişiklikleri Firestore’a kaydet
+                  }
+                  _pinchTarget = null;
+                  _pinchPrimaryId = null;
+                  _pinchSecondaryId = null;
+                }
+              },
               child: Stack(
                 key: _stageKey,
                 children: [
@@ -786,7 +842,7 @@ Widget build(BuildContext context) {
                 ],
               )
             )
-          )
+          ))
         ),Positioned(
         left: (screenSize.width / 2 - 30),
         top: usableHeight - 80,
@@ -797,7 +853,7 @@ Widget build(BuildContext context) {
           onDrop: _handleDrop,
         ),
       ),
-        ]),
+      ]),
 
         bottomNavigationBar: BottomAppBar(
           color: cardColor,
