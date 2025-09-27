@@ -53,6 +53,8 @@ class _ChatScreenState extends State<ChatScreen> {
   double _pinchStartAngle = 0; // atan2 açısı
   bool _overlayPinchActive = false;
 
+  final ScrollController _scrollController = ScrollController();
+
   Offset _stageTopLeftGlobal() {
     final ro = _stageKey.currentContext?.findRenderObject() as RenderBox?;
     if (ro == null) return Offset.zero;
@@ -160,11 +162,19 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // ==== Ekleme ====
   void _addTextBox() {
+    final screenSize = MediaQuery.of(context).size;
+    final scrollPos = _scrollController.offset; // o anki kaydırma
+    final center = Offset(
+      screenSize.width / 2,
+      scrollPos + screenSize.height / 2,
+    );
+    final currentOffset = _scrollController.offset;
+
     setState(() {
       final box = BoxItem(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         type: "textbox",
-        position: const Offset(100, 100),
+        position: center - const Offset(100, 40),
         width: 200,
         height: 80,
         text: "",
@@ -174,9 +184,21 @@ class _ChatScreenState extends State<ChatScreen> {
       boxes.add(box);
       _editingBox = box; // edit mod
     });
+
+    // Scroll pozisyonunu geri al
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollController.jumpTo(currentOffset);
+    });
   }
 
   Future<void> _pickImage() async {
+    final screenSize = MediaQuery.of(context).size;
+    final scrollPos = _scrollController.offset; // o anki kaydırma
+    final center = Offset(
+      screenSize.width / 2,
+      scrollPos + screenSize.height / 2,
+    );
+
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
     if (picked == null) return;
@@ -207,15 +229,21 @@ class _ChatScreenState extends State<ChatScreen> {
     final box = BoxItem(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       type: "image",
-      position: const Offset(150, 150),
+      position: center - Offset(newWidth / 2, newHeight / 2),
       width: newWidth,
       height: newHeight,
       imageBytes: bytes,
       mimeType: mimeType,
       isSelected: true,
     );
+    final currentOffset = _scrollController.offset;
 
     setState(() => boxes.add(box));
+
+    // Scroll pozisyonunu geri al
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollController.jumpTo(currentOffset);
+    });
 
     await _saveBox(box);
   }
@@ -251,19 +279,32 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _addEmoji(String emoji) {
+    final screenSize = MediaQuery.of(context).size;
+    final scrollPos = _scrollController.offset; // o anki kaydırma
+    final center = Offset(
+      screenSize.width / 2,
+      scrollPos + screenSize.height / 2,
+    );
+
     final newBox = BoxItem(
       id: DateTime.now().toIso8601String(),
       type: "emoji",
-      position: const Offset(120, 120),
+      position: center - const Offset(32, 32),
       text: emoji,
       fixedFontSize: 64,
       opacity: 1.0,
       isSelected: true,
     );
+    final currentOffset = _scrollController.offset;
 
     setState(() {
       boxes.add(newBox);
       _editingBox = newBox;
+    });
+
+    // Scroll pozisyonunu geri al
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollController.jumpTo(currentOffset);
     });
 
     _saveBox(newBox);
@@ -404,6 +445,32 @@ Widget build(BuildContext context) {
 
       final bgType = (data['chatBgType'] ?? 'color') as String;
       final bgUrl = data['chatBgUrl'] as String?;
+      
+      // 🔹 En alt objeyi bul → sahne yüksekliği hesapla
+      final screenSize = MediaQuery.of(context).size;
+      final padding = MediaQuery.of(context).padding;
+
+      // AppBar + BottomAppBar yükseklikleri
+      const bottomBarHeight = 56.0;
+      final appBarHeight = kToolbarHeight + padding.top; // status bar dahil
+
+      // Kullanılabilir alan (ekran - appbar - bottom bar - alt padding)
+      final usableHeight = screenSize.height - appBarHeight - bottomBarHeight - padding.bottom - 24;
+
+      double maxBottom = usableHeight;
+
+      for (final b in boxes.where((x) => x.type != "delete")) {
+        final bottom = b.position.dy + b.height;
+        if (bottom > maxBottom) maxBottom = bottom;
+      }
+
+      // Eğer hiç obje yoksa → sadece kullanılabilir alan
+      if (boxes.where((x) => x.type != "delete").isEmpty) {
+        maxBottom = usableHeight;
+      } else {
+        // Obje varsa → objelerin altına yarım ekran ekle
+        maxBottom += usableHeight * 0.5;
+      }
 
       return Scaffold(
         appBar: AppBar(
@@ -426,274 +493,311 @@ Widget build(BuildContext context) {
           ],
         ),
         backgroundColor: background,
+      body: Stack(
+      children: [Scrollbar(
+          controller: _scrollController,
+          thumbVisibility: true, // her zaman görünsün
+          child: SingleChildScrollView(
+            controller: _scrollController,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: maxBottom,
+                minWidth: screenSize.width,
+              ),
+              child: Stack(
+                key: _stageKey,
+                children: [
+                  // 1) Arkaplan
+                  Positioned.fill(
+                    child: bgType == 'image' && (bgUrl?.isNotEmpty ?? false)
+                        ? DecoratedBox(
+                            decoration: BoxDecoration(
+                              image: DecorationImage(
+                                image: NetworkImage(bgUrl!),
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          )
+                        : Container(color: themeColor.withOpacity(0.1)),
+                  ),
 
-        body: Stack(
-          key: _stageKey,
-          children: [
-            // 1) Arkaplan
-            Positioned.fill(
-              child: bgType == 'image' && (bgUrl?.isNotEmpty ?? false)
-                  ? DecoratedBox(
-                      decoration: BoxDecoration(
-                        image: DecorationImage(
-                          image: NetworkImage(bgUrl!),
-                          fit: BoxFit.cover,
-                        ),
+                  // 2) Boş alana basınca seçimleri kaldır
+                  Positioned.fill(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: () {
+                        setState(() {
+                          for (final b in boxes) {
+                            b.isSelected = false;
+                          }
+                          _editingBox = null;
+                        });
+                      },
+                    ),
+                  ),
+
+                  // 3) Objeler (textbox / image / emoji)
+                  ...boxes.map((b) {
+                    if (b.type == "textbox") {
+                      final minX = b.width / 2;
+                      final maxX = screenSize.width - b.width / 2;
+                      final safeX = b.position.dx.clamp(minX, maxX);
+                      return Positioned(
+                        left: safeX,
+                        top: b.position.dy,
+                        child:TextObject(
+                          box: b,
+                          displayLang: _targetLang,
+                          isEditing: _editingBox == b,
+                          onUpdate: () => setState(() {}),
+                          onSave: () async => _saveBox(b),
+                          onSelect: (edit) {
+                            setState(() {
+                              for (final other in boxes) {
+                                other.isSelected = false;
+                              }
+                              b.isSelected = true;
+                              _editingBox = edit ? b : null;
+                            });
+                          },
+                          onDelete: () async {
+                            setState(() {
+                              boxes.remove(b);
+                              if (_editingBox == b) _editingBox = null;
+                            });
+                            await _messagesCol.doc(b.id).delete();
+                          },
+                          isOverTrash: _pointOverTrash,
+                          onDraggingOverTrash: (v) =>
+                              setState(() => _isOverTrash = v),
+                          onInteract: (_) {},
+                          onPrimaryPointerDown: (box, pid, globalPos) {
+                            _beginPinchFromObject(box, pid, globalPos);
+                          },
+                          onBringToFront: () {
+                            setState(() {
+                              final maxZ = boxes.isEmpty
+                                  ? 0
+                                  : boxes
+                                      .map((e) => e.z)
+                                      .reduce((a, c) => a > c ? a : c);
+                              b.z = maxZ + 1;
+                              boxes.sort((a, c) => a.z.compareTo(c.z));
+                            });
+                            _saveBox(b);
+                          },
+                          onSendToBack: () {
+                            setState(() {
+                              final minZ = boxes.isEmpty
+                                  ? 0
+                                  : boxes
+                                      .map((e) => e.z)
+                                      .reduce((a, c) => a < c ? a : c);
+                              b.z = minZ - 1;
+                              boxes.sort((a, c) => a.z.compareTo(c.z));
+                            });
+                            _saveBox(b);
+                          },
+                          isDarkMode: isDarkMode,
+                        )
+                      );
+                    } else if (b.type == "image") {
+                      final minX = b.width / 2;
+                      final maxX = screenSize.width - b.width / 2;
+                      final safeX = b.position.dx.clamp(minX, maxX);
+                      return Positioned(
+                        left: safeX,
+                        top: b.position.dy,
+                        child: ImageObject(
+                          box: b,
+                          isEditing: false,
+                          onUpdate: () => setState(() {}),
+                          onSave: () async => _saveBox(b),
+                          onSelect: (_) {
+                            setState(() {
+                              for (final other in boxes) {
+                                other.isSelected = false;
+                              }
+                              b.isSelected = true;
+                            });
+                          },
+                          onDelete: () async {
+                            setState(() => boxes.remove(b));
+                            await _messagesCol.doc(b.id).delete();
+                          },
+                          isOverTrash: _pointOverTrash,
+                          onDraggingOverTrash: (v) =>
+                              setState(() => _isOverTrash = v),
+                          onInteract: (_) {},
+                          onPrimaryPointerDown: (box, pid, globalPos) {
+                            _beginPinchFromObject(box, pid, globalPos);
+                          },
+                          onBringToFront: () {
+                            setState(() {
+                              final maxZ = boxes.isEmpty
+                                  ? 0
+                                  : boxes
+                                      .map((e) => e.z)
+                                      .reduce((a, c) => a > c ? a : c);
+                              b.z = maxZ + 1;
+                              boxes.sort((a, c) => a.z.compareTo(c.z));
+                            });
+                            _saveBox(b);
+                          },
+                          onSendToBack: () {
+                            setState(() {
+                              final minZ = boxes.isEmpty
+                                  ? 0
+                                  : boxes
+                                      .map((e) => e.z)
+                                      .reduce((a, c) => a < c ? a : c);
+                              b.z = minZ - 1;
+                              boxes.sort((a, c) => a.z.compareTo(c.z));
+                            });
+                            _saveBox(b);
+                          },
+                          isDarkMode: isDarkMode,
+                        )
+                      );
+                    } else if (b.type == "emoji") {
+                      return ResizableEmojiBox(
+                        box: b,
+                        isEditing: _editingBox == b,
+                        onUpdate: () => setState(() {}),
+                        onSave: () async => _saveBox(b),
+                        onSelect: (edit) {
+                          setState(() {
+                            for (final other in boxes) {
+                              other.isSelected = false;
+                            }
+                            b.isSelected = true;
+                            _editingBox = edit ? b : null;
+                          });
+                        },
+                        onDelete: () async {
+                          setState(() => boxes.remove(b));
+                          await _messagesCol.doc(b.id).delete();
+                        },
+                        onInteract: (_) {},
+                        isOverTrash: _pointOverTrash,
+                        onDraggingOverTrash: (v) =>
+                            setState(() => _isOverTrash = v),
+                        onPrimaryPointerDown: (box, pid, globalPos) {
+                          _beginPinchFromObject(box, pid, globalPos);
+                        },
+                        onBringToFront: () {
+                          setState(() {
+                            final maxZ = boxes.isEmpty
+                                ? 0
+                                : boxes
+                                    .map((e) => e.z)
+                                    .reduce((a, c) => a > c ? a : c);
+                            b.z = maxZ + 1;
+                            boxes.sort((a, c) => a.z.compareTo(c.z));
+                          });
+                          _saveBox(b);
+                        },
+                        onSendToBack: () {
+                          setState(() {
+                            final minZ = boxes.isEmpty
+                                ? 0
+                                : boxes
+                                    .map((e) => e.z)
+                                    .reduce((a, c) => a < c ? a : c);
+                            b.z = minZ - 1;
+                            boxes.sort((a, c) => a.z.compareTo(c.z));
+                          });
+                          _saveBox(b);
+                        },
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  }).toList(),
+
+                  // 4) Çöp alanı
+                  Align(
+                    alignment: Alignment.bottomCenter,
+                    child: DeleteArea(
+                      key: _trashKey,
+                      isActive: _isOverTrash,
+                      onOverChange: (v) => setState(() => _isOverTrash = v),
+                      onDrop: _handleDrop,
+                    ),
+                  ),
+
+                  // 5) Paneller
+                  if (_editingBox != null && _editingBox!.type == "textbox")
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: ToolbarPanel(
+                        box: _editingBox!,
+                        onUpdate: () => setState(() {}),
+                        onSave: () async {
+                          final b = _editingBox!;
+                          setState(() => _editingBox = null);
+                          await _translateAndSaveFor(b);
+                        },
+                        onClose: () => setState(() => _editingBox = null),
                       ),
                     )
-                  : Container(color: themeColor.withOpacity(0.1)),
-            ),
-
-            // 2) Boş alana basınca seçimleri kaldır
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: () {
-                  setState(() {
-                    for (final b in boxes) {
-                      b.isSelected = false;
-                    }
-                    _editingBox = null;
-                  });
-                },
-              ),
-            ),
-
-            // 3) Objeler (textbox / image / emoji)
-            ...boxes.map((b) {
-              if (b.type == "textbox") {
-                return TextObject(
-                  box: b,
-                  displayLang: _targetLang,
-                  isEditing: _editingBox == b,
-                  onUpdate: () => setState(() {}),
-                  onSave: () async => _saveBox(b),
-                  onSelect: (edit) {
-                    setState(() {
-                      for (final other in boxes) {
-                        other.isSelected = false;
-                      }
-                      b.isSelected = true;
-                      _editingBox = edit ? b : null;
-                    });
-                  },
-                  onDelete: () async {
-                    setState(() {
-                      boxes.remove(b);
-                      if (_editingBox == b) _editingBox = null;
-                    });
-                    await _messagesCol.doc(b.id).delete();
-                  },
-                  isOverTrash: _pointOverTrash,
-                  onDraggingOverTrash: (v) =>
-                      setState(() => _isOverTrash = v),
-                  onInteract: (_) {},
-                  onPrimaryPointerDown: (box, pid, globalPos) {
-                    _beginPinchFromObject(box, pid, globalPos);
-                  },
-                  onBringToFront: () {
-                    setState(() {
-                      final maxZ = boxes.isEmpty
-                          ? 0
-                          : boxes
-                              .map((e) => e.z)
-                              .reduce((a, c) => a > c ? a : c);
-                      b.z = maxZ + 1;
-                      boxes.sort((a, c) => a.z.compareTo(c.z));
-                    });
-                    _saveBox(b);
-                  },
-                  onSendToBack: () {
-                    setState(() {
-                      final minZ = boxes.isEmpty
-                          ? 0
-                          : boxes
-                              .map((e) => e.z)
-                              .reduce((a, c) => a < c ? a : c);
-                      b.z = minZ - 1;
-                      boxes.sort((a, c) => a.z.compareTo(c.z));
-                    });
-                    _saveBox(b);
-                  },
-                  isDarkMode: isDarkMode,
-                );
-              } else if (b.type == "image") {
-                return ImageObject(
-                  box: b,
-                  isEditing: false,
-                  onUpdate: () => setState(() {}),
-                  onSave: () async => _saveBox(b),
-                  onSelect: (_) {
-                    setState(() {
-                      for (final other in boxes) {
-                        other.isSelected = false;
-                      }
-                      b.isSelected = true;
-                    });
-                  },
-                  onDelete: () async {
-                    setState(() => boxes.remove(b));
-                    await _messagesCol.doc(b.id).delete();
-                  },
-                  isOverTrash: _pointOverTrash,
-                  onDraggingOverTrash: (v) =>
-                      setState(() => _isOverTrash = v),
-                  onInteract: (_) {},
-                  onPrimaryPointerDown: (box, pid, globalPos) {
-                    _beginPinchFromObject(box, pid, globalPos);
-                  },
-                  onBringToFront: () {
-                    setState(() {
-                      final maxZ = boxes.isEmpty
-                          ? 0
-                          : boxes
-                              .map((e) => e.z)
-                              .reduce((a, c) => a > c ? a : c);
-                      b.z = maxZ + 1;
-                      boxes.sort((a, c) => a.z.compareTo(c.z));
-                    });
-                    _saveBox(b);
-                  },
-                  onSendToBack: () {
-                    setState(() {
-                      final minZ = boxes.isEmpty
-                          ? 0
-                          : boxes
-                              .map((e) => e.z)
-                              .reduce((a, c) => a < c ? a : c);
-                      b.z = minZ - 1;
-                      boxes.sort((a, c) => a.z.compareTo(c.z));
-                    });
-                    _saveBox(b);
-                  },
-                  isDarkMode: isDarkMode,
-                );
-              } else if (b.type == "emoji") {
-                return ResizableEmojiBox(
-                  box: b,
-                  isEditing: _editingBox == b,
-                  onUpdate: () => setState(() {}),
-                  onSave: () async => _saveBox(b),
-                  onSelect: (edit) {
-                    setState(() {
-                      for (final other in boxes) {
-                        other.isSelected = false;
-                      }
-                      b.isSelected = true;
-                      _editingBox = edit ? b : null;
-                    });
-                  },
-                  onDelete: () async {
-                    setState(() => boxes.remove(b));
-                    await _messagesCol.doc(b.id).delete();
-                  },
-                  onInteract: (_) {},
-                  isOverTrash: _pointOverTrash,
-                  onDraggingOverTrash: (v) =>
-                      setState(() => _isOverTrash = v),
-                  onPrimaryPointerDown: (box, pid, globalPos) {
-                    _beginPinchFromObject(box, pid, globalPos);
-                  },
-                  onBringToFront: () {
-                    setState(() {
-                      final maxZ = boxes.isEmpty
-                          ? 0
-                          : boxes
-                              .map((e) => e.z)
-                              .reduce((a, c) => a > c ? a : c);
-                      b.z = maxZ + 1;
-                      boxes.sort((a, c) => a.z.compareTo(c.z));
-                    });
-                    _saveBox(b);
-                  },
-                  onSendToBack: () {
-                    setState(() {
-                      final minZ = boxes.isEmpty
-                          ? 0
-                          : boxes
-                              .map((e) => e.z)
-                              .reduce((a, c) => a < c ? a : c);
-                      b.z = minZ - 1;
-                      boxes.sort((a, c) => a.z.compareTo(c.z));
-                    });
-                    _saveBox(b);
-                  },
-                );
-              }
-              return const SizedBox.shrink();
-            }).toList(),
-
-            // 4) Çöp alanı
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: DeleteArea(
-                key: _trashKey,
-                isActive: _isOverTrash,
-                onOverChange: (v) => setState(() => _isOverTrash = v),
-                onDrop: _handleDrop,
-              ),
-            ),
-
-            // 5) Paneller
-            if (_editingBox != null && _editingBox!.type == "textbox")
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: ToolbarPanel(
-                  box: _editingBox!,
-                  onUpdate: () => setState(() {}),
-                  onSave: () async {
-                    final b = _editingBox!;
-                    setState(() => _editingBox = null);
-                    await _translateAndSaveFor(b);
-                  },
-                  onClose: () => setState(() => _editingBox = null),
-                ),
+                  else if (_editingBox != null && _editingBox!.type == "emoji")
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: EmojiEditPanel(
+                        box: _editingBox!,
+                        onUpdate: () => setState(() {}),
+                        onSave: () async {
+                          final b = _editingBox!;
+                          setState(() => _editingBox = null);
+                          await _saveBox(b);
+                        },
+                        onClose: () => setState(() => _editingBox = null),
+                        onBringToFront: () {
+                          setState(() {
+                            final maxZ = boxes.isEmpty
+                                ? 0
+                                : boxes
+                                    .map((e) => e.z)
+                                    .reduce((a, c) => a > c ? a : c);
+                            _editingBox!.z = maxZ + 1;
+                            boxes.sort((a, c) => a.z.compareTo(c.z));
+                          });
+                          _saveBox(_editingBox!);
+                        },
+                        onSendToBack: () {
+                          setState(() {
+                            final minZ = boxes.isEmpty
+                                ? 0
+                                : boxes
+                                    .map((e) => e.z)
+                                    .reduce((a, c) => a < c ? a : c);
+                            _editingBox!.z = minZ - 1;
+                            boxes.sort((a, c) => a.z.compareTo(c.z));
+                          });
+                          _saveBox(_editingBox!);
+                        },
+                        currentUserId: widget.currentUserId,
+                      ),
+                    ),
+                ],
               )
-            else if (_editingBox != null && _editingBox!.type == "emoji")
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: EmojiEditPanel(
-                  box: _editingBox!,
-                  onUpdate: () => setState(() {}),
-                  onSave: () async {
-                    final b = _editingBox!;
-                    setState(() => _editingBox = null);
-                    await _saveBox(b);
-                  },
-                  onClose: () => setState(() => _editingBox = null),
-                  onBringToFront: () {
-                    setState(() {
-                      final maxZ = boxes.isEmpty
-                          ? 0
-                          : boxes
-                              .map((e) => e.z)
-                              .reduce((a, c) => a > c ? a : c);
-                      _editingBox!.z = maxZ + 1;
-                      boxes.sort((a, c) => a.z.compareTo(c.z));
-                    });
-                    _saveBox(_editingBox!);
-                  },
-                  onSendToBack: () {
-                    setState(() {
-                      final minZ = boxes.isEmpty
-                          ? 0
-                          : boxes
-                              .map((e) => e.z)
-                              .reduce((a, c) => a < c ? a : c);
-                      _editingBox!.z = minZ - 1;
-                      boxes.sort((a, c) => a.z.compareTo(c.z));
-                    });
-                    _saveBox(_editingBox!);
-                  },
-                  currentUserId: widget.currentUserId,
-                ),
-              ),
-          ],
+            )
+          )
+        ),Positioned(
+        left: (screenSize.width / 2 - 30),
+        top: usableHeight - 80,
+        child: DeleteArea(
+          key: _trashKey,
+          isActive: _isOverTrash,
+          onOverChange: (v) => setState(() => _isOverTrash = v),
+          onDrop: _handleDrop,
         ),
+      ),
+        ]),
 
         bottomNavigationBar: BottomAppBar(
           color: cardColor,
