@@ -2,14 +2,35 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'screens/login_screen.dart';
 import 'screens/user_list_screen.dart';
 import 'screens/settings_screen.dart';
 
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+  print("📩 Arka planda bildirim geldi: ${message.notification?.title}");
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+
+  // 🔹 Background handler
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+  // 🔹 Foreground mesajları dinle
+  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+    print("📩 Bildirim geldi (foreground): ${message.notification?.title}");
+  });
+
+  // 🔹 Kullanıcı bildirime tıklayıp app açtıysa
+  FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+    print("📩 Bildirimden uygulama açıldı: ${message.notification?.title}");
+    // burada istersen Navigator.push yapabilirsin
+  });
+
   runApp(const MyApp());
 }
 
@@ -56,24 +77,24 @@ class MyApp extends StatelessWidget {
               debugShowCheckedModeBanner: false,
               themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
 
-              // 🔹 Light tema (beyaz tonları)
+              // 🔹 Light tema
               theme: ThemeData(
                 useMaterial3: true,
                 colorScheme: lightScheme,
                 scaffoldBackgroundColor: Colors.grey[50],
-                appBarTheme: AppBarTheme(
+                appBarTheme: const AppBarTheme(
                   backgroundColor: Colors.white,
                   foregroundColor: Colors.black,
                   elevation: 0,
                 ),
               ),
 
-              // 🔹 Dark tema (siyah tonları)
+              // 🔹 Dark tema
               darkTheme: ThemeData(
                 useMaterial3: true,
                 colorScheme: darkScheme,
                 scaffoldBackgroundColor: Colors.grey[900],
-                appBarTheme: AppBarTheme(
+                appBarTheme: const AppBarTheme(
                   backgroundColor: Colors.black,
                   foregroundColor: Colors.white,
                   elevation: 0,

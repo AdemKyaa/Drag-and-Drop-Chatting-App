@@ -45,21 +45,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool? _isDarkMode;
   String _selectedLang = 'tr'; // 🔹 varsayılan TR
 
-  // 🔹 FCM token kaydet
-  Future<void> _saveFcmToken(String uid) async {
-    try {
-      final fcmToken = await FirebaseMessaging.instance.getToken();
-      if (fcmToken != null) {
-        await FirebaseFirestore.instance.collection('users').doc(uid).set(
-          {'fcmToken': fcmToken},
-          SetOptions(merge: true),
-        );
-      }
-    } catch (e) {
-      debugPrint("⚠️ Token kaydedilemedi: $e");
-    }
-  }
-
   Future<void> _register() async {
     final username = _usernameController.text.trim();
     final password = _passwordController.text.trim();
@@ -89,6 +74,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final uid = FirebaseFirestore.instance.collection('users').doc().id;
       final hashed = BCrypt.hashpw(password, BCrypt.gensalt());
 
+      // ✅ token al
+      final fcmToken = await FirebaseMessaging.instance.getToken();
+
       await FirebaseFirestore.instance.collection('users').doc(uid).set({
         'username': username,
         'passwordHash': hashed,
@@ -96,16 +84,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
         'photoUrl': '',
         'isOnline': true,
         'isOnlineVisible': true,
-        'themeColor': 0xFF4CAF50, // ✅ sabit yeşil ton
+        'themeColor': 0xFF4CAF50, // sabit yeşil ton
         'chatBgType': 'color',
         'chatBgColor': 0xFFFFFFFF,
         'chatBgUrl': '',
         'createdAt': FieldValue.serverTimestamp(),
-        'lang': _selectedLang, // 🔹 seçilen dili kaydet
+        'lang': _selectedLang,
+        if (fcmToken != null) 'fcmToken': fcmToken, // ✅ token doğrudan ekleniyor
       });
-
-      // ✅ Token kaydet
-      await _saveFcmToken(uid);
 
       if (!mounted) return;
 

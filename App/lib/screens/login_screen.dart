@@ -50,21 +50,6 @@ class _LoginScreenState extends State<LoginScreen> {
   bool? _isDarkMode;
   String _selectedLang = 'tr'; // 🔹 varsayılan TR
 
-  // 🔹 FCM token kaydetme
-  Future<void> _saveFcmToken(String uid) async {
-    try {
-      final fcmToken = await FirebaseMessaging.instance.getToken();
-      if (fcmToken != null) {
-        await users.doc(uid).set(
-          {'fcmToken': fcmToken},
-          SetOptions(merge: true),
-        );
-      }
-    } catch (e) {
-      debugPrint("⚠️ Token kaydedilemedi: $e");
-    }
-  }
-
   Future<void> login() async {
     setState(() => _loading = true);
 
@@ -79,13 +64,14 @@ class _LoginScreenState extends State<LoginScreen> {
         final valid = BCrypt.checkpw(password, storedHash);
 
         if (valid) {
+          // 🔹 FCM token al
+          final fcmToken = await FirebaseMessaging.instance.getToken();
+
           await users.doc(userDoc.id).update({
             "isOnline": true,
             "lastSeen": FieldValue.serverTimestamp(),
+            if (fcmToken != null) "fcmToken": fcmToken, // ✅ token kaydı
           });
-
-          // ✅ Token kaydet
-          await _saveFcmToken(userDoc.id);
 
           Navigator.pushReplacement(
             context,

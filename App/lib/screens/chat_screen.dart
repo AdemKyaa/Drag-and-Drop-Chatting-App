@@ -360,7 +360,13 @@ class _ChatScreenState extends State<ChatScreen> {
         debugPrint("⚠️ Uyarı: imageUrl boş kaldı! Bu object-not-found sebebi olabilir.");
       }
 
-      await _messagesCol.doc(b.id).set(b.toMap(), SetOptions(merge: true));
+      await _messagesCol.doc(b.id).set(
+        {
+          ...b.toMap(),
+          'senderId': widget.currentUserId, // 🔹 eklenen alan
+        },
+        SetOptions(merge: true),
+      );
       debugPrint("📥 ${b.id} Firestore’a kaydedildi.");
     } catch (e) {
       debugPrint("❌ HATA! _saveBox başarısız: $e");
