@@ -3,6 +3,32 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:bcrypt/bcrypt.dart';
 import 'user_list_screen.dart';
 
+// --- Diller ---
+const Map<String, Map<String, String>> _registerTranslations = {
+  'en': {
+    'register': 'Register',
+    'username': 'Username',
+    'password': 'Password',
+    'registerBtn': 'Register',
+    'emptyError': '⚠️ Username and password cannot be empty',
+    'existsError': '⚠️ This username is already taken',
+    'error': '❌ Registration error',
+  },
+  'tr': {
+    'register': 'Kayıt Ol',
+    'username': 'Kullanıcı adı',
+    'password': 'Şifre',
+    'registerBtn': 'Kayıt Ol',
+    'emptyError': '⚠️ Kullanıcı adı ve şifre boş olamaz',
+    'existsError': '⚠️ Bu kullanıcı adı zaten alınmış',
+    'error': '❌ Kayıt hatası',
+  },
+};
+
+String rt(String lang, String key) {
+  return _registerTranslations[lang]?[key] ?? key;
+}
+
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
 
@@ -14,9 +40,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _loading = false;
-
-  /// Kullanıcının seçtiği tema (null → sistem temasını kullan)
   bool? _isDarkMode;
+  String _selectedLang = 'tr'; // 🔹 varsayılan TR
 
   Future<void> _register() async {
     final username = _usernameController.text.trim();
@@ -24,7 +49,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     if (username.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("⚠️ Kullanıcı adı ve şifre boş olamaz")),
+        SnackBar(content: Text(rt(_selectedLang, 'emptyError'))),
       );
       return;
     }
@@ -32,7 +57,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _loading = true);
 
     try {
-      // Kullanıcı adı zaten var mı kontrol et
       final existing = await FirebaseFirestore.instance
           .collection('users')
           .where('username', isEqualTo: username)
@@ -40,13 +64,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       if (existing.docs.isNotEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("⚠️ Bu kullanıcı adı zaten alınmış")),
+          SnackBar(content: Text(rt(_selectedLang, 'existsError'))),
         );
         return;
       }
 
       final uid = FirebaseFirestore.instance.collection('users').doc().id;
-
       final hashed = BCrypt.hashpw(password, BCrypt.gensalt());
 
       await FirebaseFirestore.instance.collection('users').doc(uid).set({
@@ -61,6 +84,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         'chatBgColor': 0xFFFFFFFF,
         'chatBgUrl': '',
         'createdAt': FieldValue.serverTimestamp(),
+        'lang': _selectedLang, // 🔹 seçilen dili kaydet
       });
 
       if (!mounted) return;
@@ -71,7 +95,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("❌ Kayıt hatası: $e")),
+        SnackBar(content: Text("${rt(_selectedLang, 'error')}: $e")),
       );
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -80,7 +104,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // 📱 Eğer kullanıcı override etmemişse cihazın sistem temasını kullan
     final isDark = _isDarkMode ??
         MediaQuery.of(context).platformBrightness == Brightness.dark;
 
@@ -90,10 +113,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Kayıt Ol"),
+        title: Text(rt(_selectedLang, 'register')),
         backgroundColor: cardColor,
         foregroundColor: textColor,
         actions: [
+          // 🔹 Dil seçim bayrakları
+          GestureDetector(
+            onTap: () => setState(() => _selectedLang = 'tr'),
+            child: Opacity(
+              opacity: _selectedLang == 'tr' ? 1.0 : 0.4,
+              child: const Text("🇹🇷", style: TextStyle(fontSize: 24)),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () => setState(() => _selectedLang = 'en'),
+            child: Opacity(
+              opacity: _selectedLang == 'en' ? 1.0 : 0.4,
+              child: const Text("🇺🇸", style: TextStyle(fontSize: 24)),
+            ),
+          ),
+          const SizedBox(width: 12),
+
+          // 🔹 Tema butonu
           IconButton(
             icon: Icon(isDark ? Icons.dark_mode : Icons.light_mode),
             color: textColor,
@@ -114,7 +156,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               controller: _usernameController,
               style: TextStyle(color: textColor),
               decoration: InputDecoration(
-                labelText: "Kullanıcı adı",
+                labelText: rt(_selectedLang, 'username'),
                 labelStyle: TextStyle(color: textColor),
                 enabledBorder: OutlineInputBorder(
                   borderSide: BorderSide(color: textColor.withOpacity(0.6)),
@@ -130,7 +172,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               obscureText: true,
               style: TextStyle(color: textColor),
               decoration: InputDecoration(
-                labelText: "Şifre",
+                labelText: rt(_selectedLang, 'password'),
                 labelStyle: TextStyle(color: textColor),
                 enabledBorder: OutlineInputBorder(
                   borderSide: BorderSide(color: textColor.withOpacity(0.6)),
@@ -149,7 +191,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       foregroundColor: textColor,
                     ),
                     onPressed: _register,
-                    child: const Text("Kayıt Ol"),
+                    child: Text(rt(_selectedLang, 'registerBtn')),
                   ),
           ],
         ),

@@ -3,6 +3,24 @@ import 'package:flutter/material.dart';
 import '../../models/box_item.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+// --- Diller ---
+const Map<String, Map<String, String>> _emojiPanelTranslations = {
+  'en': {
+    'bringFront': 'Bring to Front',
+    'sendBack': 'Send to Back',
+    'opacity': 'Opacity',
+  },
+  'tr': {
+    'bringFront': 'En üste al',
+    'sendBack': 'En alta al',
+    'opacity': 'Opaklık',
+  },
+};
+
+String et(String lang, String key) {
+  return _emojiPanelTranslations[lang]?[key] ?? key;
+}
+
 class EmojiEditPanel extends StatefulWidget {
   final BoxItem box;
   final VoidCallback onUpdate;
@@ -10,7 +28,7 @@ class EmojiEditPanel extends StatefulWidget {
   final VoidCallback onClose;
   final VoidCallback? onBringToFront;
   final VoidCallback? onSendToBack;
-  final String currentUserId; // ✅ dark mode için lazım
+  final String currentUserId;
 
   const EmojiEditPanel({
     super.key,
@@ -33,7 +51,7 @@ class _EmojiEditPanelState extends State<EmojiEditPanel> {
   void _scheduleAutoSave() {
     _debouncer?.cancel();
     _debouncer = Timer(const Duration(milliseconds: 250), () {
-      widget.onSave(); // otomatik kaydet
+      widget.onSave();
     });
   }
 
@@ -50,14 +68,13 @@ class _EmojiEditPanelState extends State<EmojiEditPanel> {
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
           .collection('users')
-          .doc(widget.currentUserId) // ✅ currentUserId parametresini kullan
+          .doc(widget.currentUserId)
           .snapshots(),
       builder: (context, snap) {
         final data = snap.data?.data() ?? {};
-
-        // 🔹 Firestore’dan tema bilgileri
         final bool isDarkMode = data['isDarkMode'] ?? false;
         final int seed = (data['themeColor'] as int?) ?? 0xFF2962FF;
+        final String lang = data['lang'] ?? 'tr'; // 🔹 dili oku
 
         final background = isDarkMode ? Colors.grey[900] : Colors.grey[50];
         final cardColor = isDarkMode ? Colors.grey[850]! : Colors.white;
@@ -97,7 +114,7 @@ class _EmojiEditPanelState extends State<EmojiEditPanel> {
                         backgroundColor: cardColor,
                         foregroundColor: textColor,
                       ),
-                      child: const Text('En üste al'),
+                      child: Text(et(lang, 'bringFront')),
                     ),
                     const SizedBox(width: 12),
                     FilledButton.tonal(
@@ -106,7 +123,7 @@ class _EmojiEditPanelState extends State<EmojiEditPanel> {
                         backgroundColor: cardColor,
                         foregroundColor: textColor,
                       ),
-                      child: const Text('En alta al'),
+                      child: Text(et(lang, 'sendBack')),
                     ),
                   ],
                 ),
@@ -116,7 +133,7 @@ class _EmojiEditPanelState extends State<EmojiEditPanel> {
                 // Opacity slider
                 Row(
                   children: [
-                    Text('Opaklık', style: TextStyle(color: textColor)),
+                    Text(et(lang, 'opacity'), style: TextStyle(color: textColor)),
                     Expanded(
                       child: Slider(
                         value: b.opacity.clamp(0.0, 1.0),

@@ -4,6 +4,30 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 
+// --- Diller ---
+const Map<String, Map<String, String>> _translations = {
+  'en': {
+    'settings': 'Settings',
+    'profileName': 'Profile Name',
+    'themeColor': 'Theme Color',
+    'onlineVisible': 'Show Online Status',
+    'darkMode': 'Dark Mode',
+    'language': 'Language',
+  },
+  'tr': {
+    'settings': 'Ayarlar',
+    'profileName': 'Profil Adı',
+    'themeColor': 'Tema Rengi',
+    'onlineVisible': 'Online Durumunu Göster',
+    'darkMode': 'Karanlık Mod',
+    'language': 'Dil',
+  },
+};
+
+String t(String lang, String key) {
+  return _translations[lang]?[key] ?? key;
+}
+
 const _presetSeeds = <int>[
   0xFF2962FF, // Mavi
   0xFF00C853, // Yeşil
@@ -26,6 +50,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final picker = ImagePicker();
   late final String uid;
 
+  String _selectedLang = 'tr'; // Varsayılan Türkçe
+
   @override
   void initState() {
     super.initState();
@@ -34,6 +60,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final data = snap.data();
       if (data != null) {
         _nameController.text = data['displayName'] ?? "";
+        if (data['lang'] != null) {
+          setState(() {
+            _selectedLang = data['lang'];
+          });
+        }
       }
     });
   }
@@ -80,7 +111,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
         return Scaffold(
           appBar: AppBar(
-            title: Text("Ayarlar", style: TextStyle(color: textColor)),
+            title: Text(t(_selectedLang, 'settings'), style: TextStyle(color: textColor)),
             backgroundColor: cardColor,
             iconTheme: IconThemeData(color: textColor),
           ),
@@ -108,7 +139,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 controller: _nameController,
                 style: TextStyle(color: textColor),
                 decoration: InputDecoration(
-                  labelText: "Profil Adı",
+                  labelText: t(_selectedLang, 'profileName'),
                   labelStyle: TextStyle(color: textColor),
                   enabledBorder: OutlineInputBorder(
                     borderSide: BorderSide(color: textColor.withOpacity(0.5)),
@@ -121,7 +152,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
 
               const SizedBox(height: 24),
-              Text("Tema Rengi",
+
+              // Tema Rengi
+              Text(t(_selectedLang, 'themeColor'),
                   style: TextStyle(
                       fontSize: 16, fontWeight: FontWeight.w600, color: textColor)),
               const SizedBox(height: 12),
@@ -146,8 +179,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
 
               const SizedBox(height: 24),
+
+              // Online durum
               SwitchListTile(
-                title: Text("Online Durumunu Göster", style: TextStyle(color: textColor)),
+                title: Text(t(_selectedLang, 'onlineVisible'),
+                    style: TextStyle(color: textColor)),
                 activeColor: Colors.blue,
                 value: isOnlineVisible,
                 onChanged: (val) async {
@@ -159,8 +195,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
 
               const SizedBox(height: 24),
+
+              // Karanlık mod
               SwitchListTile(
-                title: Text("Karanlık Mod", style: TextStyle(color: textColor)),
+                title: Text(t(_selectedLang, 'darkMode'),
+                    style: TextStyle(color: textColor)),
                 activeColor: Colors.blue,
                 value: isDarkMode,
                 onChanged: (val) async {
@@ -169,6 +208,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     SetOptions(merge: true),
                   );
                 },
+              ),
+
+              const SizedBox(height: 24),
+
+              // Dil seçme (Bayrak ikonları)
+              Row(
+                children: [
+                  Text(
+                    t(_selectedLang, 'language'),
+                    style: TextStyle(color: textColor, fontSize: 16),
+                  ),
+                  const SizedBox(width: 20),
+
+                  // Türk Bayrağı 🇹🇷
+                  GestureDetector(
+                    onTap: () async {
+                      setState(() => _selectedLang = 'tr');
+                      await FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(uid)
+                          .set({'lang': 'tr'}, SetOptions(merge: true));
+                    },
+                    child: Opacity(
+                      opacity: _selectedLang == 'tr' ? 1.0 : 0.4,
+                      child: const Text(
+                        "🇹🇷",
+                        style: TextStyle(fontSize: 28),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+
+                  // Amerikan Bayrağı 🇺🇸
+                  GestureDetector(
+                    onTap: () async {
+                      setState(() => _selectedLang = 'en');
+                      await FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(uid)
+                          .set({'lang': 'en'}, SetOptions(merge: true));
+                    },
+                    child: Opacity(
+                      opacity: _selectedLang == 'en' ? 1.0 : 0.4,
+                      child: const Text(
+                        "🇺🇸",
+                        style: TextStyle(fontSize: 28),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

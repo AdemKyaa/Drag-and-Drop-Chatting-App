@@ -19,7 +19,8 @@ class TextObject extends StatefulWidget {
   final void Function(BoxItem box, int pointerId, Offset globalPos)? onPrimaryPointerDown;
   final VoidCallback? onBringToFront;
   final VoidCallback? onSendToBack;
-  final bool isDarkMode; // ✅ Dark mode bilgisi parametreyle geliyor
+  final bool isDarkMode; 
+  final String currentUserId; // 🔹 eklendi → dil için gerekli
 
   const TextObject({
     super.key,
@@ -37,6 +38,7 @@ class TextObject extends StatefulWidget {
     this.onBringToFront,
     this.onSendToBack,
     required this.isDarkMode,
+    required this.currentUserId, // 🔹 zorunlu
   });
 
   @override
@@ -63,53 +65,6 @@ class _TextObjectState extends State<TextObject> {
     _startFontSize = widget.box.fixedFontSize;
   }
 
-  Size _measureText(BoxItem b, {double maxWidth = 2000}) {
-    final baseStyle = GoogleFonts.getFont(
-      b.fontFamily.isEmpty ? 'Roboto' : b.fontFamily,
-      textStyle: GoogleFonts.getFont(
-        b.fontFamily.isEmpty ? 'Roboto' : b.fontFamily,
-        textStyle: TextStyle(
-          fontSize: b.fixedFontSize,
-          fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
-          fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
-          decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
-          color: Color(b.textColor),
-        ),
-      )
-    );
-
-    final span = TextSpan(
-      style: baseStyle,
-      children: b.styledSpans(baseStyle),
-    );
-
-    final tp = TextPainter(
-      text: span,
-      textAlign: b.align,
-      textDirection: TextDirection.ltr,
-      maxLines: null,
-    )..layout(maxWidth: maxWidth);
-
-    return Size(tp.width, tp.height);
-  }
-
-  int _lineCount(BoxItem b, {double maxWidth = 2000}) {
-    final style = GoogleFonts.getFont(
-      b.fontFamily.isEmpty ? 'Roboto' : b.fontFamily,
-      textStyle: TextStyle(fontSize: b.fixedFontSize),
-    );
-
-    final span = TextSpan(style: style, children: b.styledSpans(style));
-
-    final tp = TextPainter(
-      text: span,
-      textDirection: TextDirection.ltr,
-      maxLines: null,
-    )..layout(maxWidth: maxWidth);
-
-    return tp.computeLineMetrics().length;
-  }
-
   void _onScaleUpdate(ScaleUpdateDetails d) {
     final b = widget.box;
     if (d.pointerCount == 1) {
@@ -117,22 +72,19 @@ class _TextObjectState extends State<TextObject> {
         final dx = d.focalPointDelta.dx;
         final dy = d.focalPointDelta.dy;
 
-        // kutunun açısını tersine döndür → delta’yı local eksene çevir
         final angle = -(_startRot + d.rotation);
         final rotatedDx = dx * cos(angle) + dy * sin(angle);
         final rotatedDy = -(dx * sin(angle) - dy * cos(angle));
 
         b.position += Offset(rotatedDx, rotatedDy);
       }
-  }
+    }
 
     if (d.pointerCount >= 2) {
       if (d.scale > 0) {
-        // 1) Yeni font size
         final newFont = (_startFontSize * d.scale).clamp(8.0, 300.0);
         b.fixedFontSize = newFont;
 
-        // 2) Yeni metin ölçümü
         final textSize = _measureText(b);
         final lineCount = _lineCount(b);
 
@@ -140,8 +92,6 @@ class _TextObjectState extends State<TextObject> {
         b.width = (textSize.width + padH).clamp(24, 4096.0);
         b.height = (lineCount * newFont * 1.2 + padV).clamp(24.0, 4096.0);
       }
-
-      // Rotation her frame güncel rotation ile hesaplanmalı
       b.rotation = _startRot + d.rotation;
     }
 
@@ -194,6 +144,46 @@ class _TextObjectState extends State<TextObject> {
     );
   }
 
+  Size _measureText(BoxItem b, {double maxWidth = 2000}) {
+    final baseStyle = GoogleFonts.getFont(
+      b.fontFamily.isEmpty ? 'Roboto' : b.fontFamily,
+      textStyle: TextStyle(
+        fontSize: b.fixedFontSize,
+        fontWeight: b.bold ? FontWeight.bold : FontWeight.normal,
+        fontStyle: b.italic ? FontStyle.italic : FontStyle.normal,
+        decoration: b.underline ? TextDecoration.underline : TextDecoration.none,
+        color: Color(b.textColor),
+      ),
+    );
+
+    final span = TextSpan(style: baseStyle, children: b.styledSpans(baseStyle));
+
+    final tp = TextPainter(
+      text: span,
+      textDirection: TextDirection.ltr,
+      maxLines: null,
+    )..layout(maxWidth: maxWidth);
+
+    return Size(tp.width, tp.height);
+  }
+
+  int _lineCount(BoxItem b, {double maxWidth = 2000}) {
+    final style = GoogleFonts.getFont(
+      b.fontFamily.isEmpty ? 'Roboto' : b.fontFamily,
+      textStyle: TextStyle(fontSize: b.fixedFontSize),
+    );
+
+    final span = TextSpan(style: style, children: b.styledSpans(style));
+
+    final tp = TextPainter(
+      text: span,
+      textDirection: TextDirection.ltr,
+      maxLines: null,
+    )..layout(maxWidth: maxWidth);
+
+    return tp.computeLineMetrics().length;
+  }
+
   void _recalcBoxSize(BoxItem b) {
     final baseStyle = GoogleFonts.getFont(
       b.fontFamily.isEmpty ? 'Roboto' : b.fontFamily,
@@ -206,24 +196,20 @@ class _TextObjectState extends State<TextObject> {
       ),
     );
 
-    final span = TextSpan(
-      style: baseStyle,
-      children: b.styledSpans(baseStyle),
-    );
+    final span = TextSpan(style: baseStyle, children: b.styledSpans(baseStyle));
 
     final tp = TextPainter(
       text: span,
-      textAlign: b.align,
       textDirection: TextDirection.ltr,
       maxLines: null,
     )..layout(maxWidth: 2000);
 
     final lineCount = tp.computeLineMetrics().length;
     const padH = 32.0, padV = 24.0;
-    
+
     final newW = (tp.width + padH).clamp(24.0, 4096.0);
-    final newH = (lineCount * b.fixedFontSize * 1.2 + padV)
-    .clamp(24.0, 4096.0);
+    final newH =
+        (lineCount * b.fixedFontSize * 1.2 + padV).clamp(24.0, 4096.0);
 
     if ((b.width - newW).abs() > 0.5 || (b.height - newH).abs() > 0.5) {
       b.width = newW;
@@ -242,6 +228,7 @@ class _TextObjectState extends State<TextObject> {
         onBringToFront: widget.onBringToFront,
         onSendToBack: widget.onSendToBack,
         isDarkMode: widget.isDarkMode,
+        currentUserId: widget.currentUserId, // 🔹 dil için eklendi
       ),
     );
   }
@@ -254,79 +241,81 @@ class _TextObjectState extends State<TextObject> {
     return Positioned(
       left: b.position.dx,
       top: b.position.dy,
-        child: Transform.rotate(
-          angle: b.rotation,
-          child: Listener(
+      child: Transform.rotate(
+        angle: b.rotation,
+        child: Listener(
+          behavior: HitTestBehavior.opaque,
+          onPointerDown: (e) {
+            widget.onPrimaryPointerDown?.call(widget.box, e.pointer, e.position);
+          },
+          child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onPointerDown: (e) {
-              widget.onPrimaryPointerDown?.call(widget.box, e.pointer, e.position);
+            onScaleStart: _onScaleStart,
+            onScaleUpdate: _onScaleUpdate,
+            onScaleEnd: _onScaleEnd,
+            onDoubleTap: () async {
+              b.isSelected = true;
+              widget.onUpdate();
+              widget.onSelect(false);
+              await _openEditPanel();
             },
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onScaleStart: _onScaleStart,
-              onScaleUpdate: _onScaleUpdate,
-              onScaleEnd: _onScaleEnd,
-              onDoubleTap: () async {
+            onTap: () {
+              final alreadySelected = b.isSelected;
+              if (!alreadySelected) {
                 b.isSelected = true;
-                widget.onUpdate();
                 widget.onSelect(false);
-                await _openEditPanel();
-              },
-              onTap: () {
-                final alreadySelected = b.isSelected;
-                if (!alreadySelected) {
-                  b.isSelected = true;
-                  widget.onSelect(false);
-                } else {
-                  widget.onSelect(true);
-                }
-              },
-                child: SizedBox(
-                  width: b.width,
-                  height: b.height + (showToolbar ? (_toolbarH + 6) : 0),
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Positioned(
-                        left: 0,
-                        top: (showToolbar ? (_toolbarH + 6) : 0),
-                        child: Container(
-                          width: b.width,
-                          height: b.height,
-                          alignment: Alignment.center,
-                          padding: const EdgeInsets.symmetric(horizontal: _padH, vertical: _padV),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(
-                              b.borderRadius * (b.width < b.height ? b.width : b.height),
-                            ),
-                            color: Color(b.backgroundColor).withAlpha(
-                              (b.backgroundOpacity * 255).clamp(0, 255).round(),
-                            ),
-                          ),
-                          child: _buildContent(b),
+              } else {
+                widget.onSelect(true);
+              }
+            },
+            child: SizedBox(
+              width: b.width,
+              height: b.height + (showToolbar ? (_toolbarH + 6) : 0),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned(
+                    left: 0,
+                    top: (showToolbar ? (_toolbarH + 6) : 0),
+                    child: Container(
+                      width: b.width,
+                      height: b.height,
+                      alignment: Alignment.center,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: _padH, vertical: _padV),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(
+                          b.borderRadius *
+                              (b.width < b.height ? b.width : b.height),
+                        ),
+                        color: Color(b.backgroundColor).withAlpha(
+                          (b.backgroundOpacity * 255).clamp(0, 255).round(),
                         ),
                       ),
-                      if (b.isSelected)
-                        Positioned(
-                          left: 0,
-                          top: (showToolbar ? (_toolbarH + 6) : 0),
-                          child: IgnorePointer(
-                            child: CustomPaint(
-                              size: Size(b.width, b.height),
-                              painter: OutlinePainter(
-                                radius: b.borderRadius,
-                                show: true,
-                                color: Colors.blueAccent,
-                                strokeWidth: 2,
-                              ),
-                            ),
+                      child: _buildContent(b),
+                    ),
+                  ),
+                  if (b.isSelected)
+                    Positioned(
+                      left: 0,
+                      top: (showToolbar ? (_toolbarH + 6) : 0),
+                      child: IgnorePointer(
+                        child: CustomPaint(
+                          size: Size(b.width, b.height),
+                          painter: OutlinePainter(
+                            radius: b.borderRadius,
+                            show: true,
+                            color: Colors.blueAccent,
+                            strokeWidth: 2,
                           ),
                         ),
-                    ],
-                  ),
-                ),
+                      ),
+                    ),
+                ],
               ),
             ),
+          ),
+        ),
       ),
     );
   }

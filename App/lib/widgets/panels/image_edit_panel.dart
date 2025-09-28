@@ -1,6 +1,27 @@
 // lib/widgets/panels/image_edit_panel.dart
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/box_item.dart';
+
+// --- Diller ---
+const Map<String, Map<String, String>> _imagePanelTranslations = {
+  'en': {
+    'radius': 'Radius',
+    'opacity': 'Opacity',
+    'bringFront': 'Bring to Front',
+    'sendBack': 'Send to Back',
+  },
+  'tr': {
+    'radius': 'Köşe Yumuşatma',
+    'opacity': 'Opaklık',
+    'bringFront': 'En Üste Al',
+    'sendBack': 'En Alta Al',
+  },
+};
+
+String it(String lang, String key) {
+  return _imagePanelTranslations[lang]?[key] ?? key;
+}
 
 class ImageEditPanel extends StatefulWidget {
   final BoxItem box;
@@ -8,7 +29,8 @@ class ImageEditPanel extends StatefulWidget {
   final VoidCallback onSave;
   final VoidCallback? onBringToFront;
   final VoidCallback? onSendToBack;
-  final bool isDarkMode; // ✅ Dark mode bilgisi parametreyle geliyor
+  final bool isDarkMode;
+  final String currentUserId; // 🔹 dil için eklendi
 
   const ImageEditPanel({
     super.key,
@@ -18,6 +40,7 @@ class ImageEditPanel extends StatefulWidget {
     this.onBringToFront,
     this.onSendToBack,
     required this.isDarkMode,
+    required this.currentUserId,
   });
 
   @override
@@ -25,113 +48,116 @@ class ImageEditPanel extends StatefulWidget {
 }
 
 class _ImageEditPanelState extends State<ImageEditPanel> {
-  late BoxItem b;
-
-  @override
-  void initState() {
-    super.initState();
-    b = widget.box;
-  }
-
   @override
   Widget build(BuildContext context) {
     final b = widget.box;
-    final isDarkMode = widget.isDarkMode;
 
-    final background = isDarkMode ? Colors.black : Colors.white;
-    final textColor = isDarkMode ? Colors.white : Colors.black;
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.currentUserId)
+          .snapshots(),
+      builder: (context, snap) {
+        final data = snap.data?.data() ?? {};
+        final lang = data['lang'] ?? 'tr';
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-        boxShadow: const [BoxShadow(blurRadius: 8, color: Colors.black26)],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Drag handle
-            Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: Colors.grey,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
+        final isDarkMode = widget.isDarkMode;
+        final background = isDarkMode ? Colors.black : Colors.white;
+        final textColor = isDarkMode ? Colors.white : Colors.black;
 
-            // Radius slider
-            Row(
+        return Container(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            boxShadow: const [BoxShadow(blurRadius: 8, color: Colors.black26)],
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text("Radius", style: TextStyle(color: textColor)),
-                Expanded(
-                  child: Slider(
-                    value: b.borderRadius,
-                    min: 0,
-                    max: 1,
-                    onChanged: (v) {
-                      setState(() => b.borderRadius = v);
-                      widget.onUpdate();
-                    },
-                    onChangeEnd: (_) => widget.onSave(),
+                // Drag handle
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey,
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-              ],
-            ),
 
-            // Opacity slider
-            Row(
-              children: [
-                Text("Opacity", style: TextStyle(color: textColor)),
-                Expanded(
-                  child: Slider(
-                    value: b.imageOpacity,
-                    min: 0,
-                    max: 1,
-                    onChanged: (v) {
-                      setState(() => b.imageOpacity = v);
-                      widget.onUpdate();
-                    },
-                    onChangeEnd: (_) => widget.onSave(),
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: widget.onBringToFront,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: textColor,
-                      side: BorderSide(color: textColor.withOpacity(0.5)),
+                // Radius slider
+                Row(
+                  children: [
+                    Text(it(lang, 'radius'), style: TextStyle(color: textColor)),
+                    Expanded(
+                      child: Slider(
+                        value: b.borderRadius,
+                        min: 0,
+                        max: 1,
+                        onChanged: (v) {
+                          setState(() => b.borderRadius = v);
+                          widget.onUpdate();
+                        },
+                        onChangeEnd: (_) => widget.onSave(),
+                      ),
                     ),
-                    child: const Text("En Üste Al"),
-                  ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: widget.onSendToBack,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: textColor,
-                      side: BorderSide(color: textColor.withOpacity(0.5)),
+
+                // Opacity slider
+                Row(
+                  children: [
+                    Text(it(lang, 'opacity'), style: TextStyle(color: textColor)),
+                    Expanded(
+                      child: Slider(
+                        value: b.imageOpacity,
+                        min: 0,
+                        max: 1,
+                        onChanged: (v) {
+                          setState(() => b.imageOpacity = v);
+                          widget.onUpdate();
+                        },
+                        onChangeEnd: (_) => widget.onSave(),
+                      ),
                     ),
-                    child: const Text("En Alta Al"),
-                  ),
+                  ],
+                ),
+
+                const SizedBox(height: 12),
+
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: widget.onBringToFront,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: textColor,
+                          side: BorderSide(color: textColor.withOpacity(0.5)),
+                        ),
+                        child: Text(it(lang, 'bringFront')),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: widget.onSendToBack,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: textColor,
+                          side: BorderSide(color: textColor.withOpacity(0.5)),
+                        ),
+                        child: Text(it(lang, 'sendBack')),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

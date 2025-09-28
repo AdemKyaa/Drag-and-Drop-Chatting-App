@@ -481,16 +481,6 @@ Widget build(BuildContext context) {
             widget.otherUsername ?? "Chat",
             style: TextStyle(color: textColor),
           ),
-          actions: [
-            PopupMenuButton<String>(
-              icon: Icon(Icons.translate, color: textColor),
-              onSelected: (v) => _setLang(v),
-              itemBuilder: (ctx) => const [
-                PopupMenuItem(value: 'tr', child: Text('Türkçe')),
-                PopupMenuItem(value: 'en', child: Text('English')),
-              ],
-            ),
-          ],
         ),
         backgroundColor: background,
         body: Stack(
@@ -623,6 +613,7 @@ Widget build(BuildContext context) {
                             });
                             await _messagesCol.doc(b.id).delete();
                           },
+                          currentUserId: widget.currentUserId,
                           isOverTrash: _pointOverTrash,
                           onDraggingOverTrash: (v) =>
                               setState(() => _isOverTrash = v),
@@ -681,6 +672,7 @@ Widget build(BuildContext context) {
                             setState(() => boxes.remove(b));
                             await _messagesCol.doc(b.id).delete();
                           },
+                          currentUserId: widget.currentUserId,
                           isOverTrash: _pointOverTrash,
                           onDraggingOverTrash: (v) =>
                               setState(() => _isOverTrash = v),
@@ -741,6 +733,7 @@ Widget build(BuildContext context) {
                         onPrimaryPointerDown: (box, pid, globalPos) {
                           _beginPinchFromObject(box, pid, globalPos);
                         },
+                        currentUserId: widget.currentUserId,
                         onBringToFront: () {
                           setState(() {
                             final maxZ = boxes.isEmpty

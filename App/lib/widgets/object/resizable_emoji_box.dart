@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../models/box_item.dart';
+import '../panels/emoji_edit_panel.dart';
 
 class ResizableEmojiBox extends StatefulWidget {
   final BoxItem box;
@@ -14,6 +15,7 @@ class ResizableEmojiBox extends StatefulWidget {
   final void Function(BoxItem box, int pointerId, Offset globalPos)? onPrimaryPointerDown;
   final VoidCallback? onBringToFront;
   final VoidCallback? onSendToBack;
+  final String currentUserId; // ✅ dil ayarı ve user işlemleri için eklendi
 
   const ResizableEmojiBox({
     super.key,
@@ -29,6 +31,7 @@ class ResizableEmojiBox extends StatefulWidget {
     this.onPrimaryPointerDown,
     this.onBringToFront,
     this.onSendToBack,
+    required this.currentUserId,
   });
 
   @override
@@ -37,7 +40,23 @@ class ResizableEmojiBox extends StatefulWidget {
 
 class _ResizableEmojiBoxState extends State<ResizableEmojiBox> {
   Offset? _dragStart;
-  Offset? _lastGlobalPos; // <— drop anında çöp kontrolü için
+  Offset? _lastGlobalPos;
+
+  Future<void> _openEditPanel() async {
+    final b = widget.box;
+    await showModalBottomSheet(
+      context: context,
+      builder: (_) => EmojiEditPanel(
+        box: b,
+        onUpdate: widget.onUpdate,
+        onSave: widget.onSave,
+        onClose: () => widget.onSelect(false),
+        onBringToFront: widget.onBringToFront,
+        onSendToBack: widget.onSendToBack,
+        currentUserId: widget.currentUserId,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -52,7 +71,13 @@ class _ResizableEmojiBoxState extends State<ResizableEmojiBox> {
         },
         child: GestureDetector(
           onTap: () => widget.onSelect(false),
-          onDoubleTap: () => widget.onSelect(true),
+
+          onDoubleTap: () async {
+            b.isSelected = true;
+            widget.onUpdate();
+            widget.onSelect(false);
+            await _openEditPanel();
+          },
 
           onPanStart: (details) {
             _dragStart = details.globalPosition;
@@ -68,12 +93,11 @@ class _ResizableEmojiBoxState extends State<ResizableEmojiBox> {
             final delta = details.globalPosition - start;
             _dragStart = details.globalPosition;
             _lastGlobalPos = details.globalPosition;
-            
+
             setState(() {
               b.position += delta;
             });
 
-            // ✅ Çöp alanı hover kontrolü (objenin merkezi)
             final overTrash = widget.isOverTrash(details.globalPosition);
             widget.onDraggingOverTrash?.call(overTrash);
           },
@@ -81,19 +105,15 @@ class _ResizableEmojiBoxState extends State<ResizableEmojiBox> {
           onPanEnd: (details) async {
             widget.onInteract?.call(false);
 
-            final releasePos = details.velocity.pixelsPerSecond == Offset.zero
-                ? _lastGlobalPos
-                : _lastGlobalPos; // şimdilik aynı ama net olsun diye ekledim
-
+            final releasePos = _lastGlobalPos;
             if (releasePos != null && widget.isOverTrash(releasePos)) {
               await widget.onDelete();
             } else {
               await widget.onSave();
             }
-
             widget.onDraggingOverTrash?.call(false);
           },
-          
+
           child: Transform.rotate(
             angle: b.rotation,
             child: Opacity(

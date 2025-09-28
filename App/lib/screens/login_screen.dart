@@ -6,6 +6,32 @@ import 'package:bcrypt/bcrypt.dart';
 import 'user_list_screen.dart';
 import 'register_screen.dart';
 
+// --- Diller ---
+const Map<String, Map<String, String>> _loginTranslations = {
+  'en': {
+    'login': 'Login',
+    'username': 'Username',
+    'password': 'Password',
+    'loginBtn': 'Login',
+    'noAccount': 'Don’t have an account? Register',
+    'invalid': '❌ Invalid username or password',
+    'error': '❌ Error',
+  },
+  'tr': {
+    'login': 'Giriş Yap',
+    'username': 'Kullanıcı adı',
+    'password': 'Şifre',
+    'loginBtn': 'Giriş Yap',
+    'noAccount': 'Hesabın yok mu? Kayıt ol',
+    'invalid': '❌ Hatalı kullanıcı adı veya şifre',
+    'error': '❌ Hata',
+  },
+};
+
+String lt(String lang, String key) {
+  return _loginTranslations[lang]?[key] ?? key;
+}
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -19,7 +45,8 @@ class _LoginScreenState extends State<LoginScreen> {
   String username = "";
   String password = "";
   bool _loading = false;
-  bool? _isDarkMode; // ✅ başta null → sistemden alınacak
+  bool? _isDarkMode;
+  String _selectedLang = 'tr'; // 🔹 varsayılan TR
 
   Future<void> login() async {
     setState(() => _loading = true);
@@ -51,11 +78,11 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("❌ Hatalı kullanıcı adı veya şifre")),
+        SnackBar(content: Text(lt(_selectedLang, 'invalid'))),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("❌ Hata: $e")),
+        SnackBar(content: Text("${lt(_selectedLang, 'error')}: $e")),
       );
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -64,7 +91,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // ✅ Eğer _isDarkMode null ise → sistemi oku
     final isDark =
         _isDarkMode ?? MediaQuery.of(context).platformBrightness == Brightness.dark;
 
@@ -74,10 +100,29 @@ class _LoginScreenState extends State<LoginScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text("Giriş Yap", style: TextStyle(color: textColor)),
+        title: Text(lt(_selectedLang, 'login'), style: TextStyle(color: textColor)),
         backgroundColor: cardColor,
         iconTheme: IconThemeData(color: textColor),
         actions: [
+          // 🔹 Dil seçim bayrakları
+          GestureDetector(
+            onTap: () => setState(() => _selectedLang = 'tr'),
+            child: Opacity(
+              opacity: _selectedLang == 'tr' ? 1.0 : 0.4,
+              child: const Text("🇹🇷", style: TextStyle(fontSize: 24)),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () => setState(() => _selectedLang = 'en'),
+            child: Opacity(
+              opacity: _selectedLang == 'en' ? 1.0 : 0.4,
+              child: const Text("🇺🇸", style: TextStyle(fontSize: 24)),
+            ),
+          ),
+          const SizedBox(width: 12),
+
+          // 🔹 Karanlık / aydınlık tema
           IconButton(
             icon: Icon(
               isDark ? Icons.dark_mode : Icons.light_mode,
@@ -85,7 +130,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             onPressed: () {
               setState(() {
-                _isDarkMode = !isDark; // ✅ sistemi ez, kullanıcı seçsin
+                _isDarkMode = !isDark;
               });
             },
           ),
@@ -99,7 +144,7 @@ class _LoginScreenState extends State<LoginScreen> {
             TextField(
               style: TextStyle(color: textColor),
               decoration: InputDecoration(
-                labelText: "Kullanıcı adı",
+                labelText: lt(_selectedLang, 'username'),
                 labelStyle: TextStyle(color: textColor),
                 enabledBorder: OutlineInputBorder(
                   borderSide: BorderSide(color: textColor.withOpacity(0.5)),
@@ -115,7 +160,7 @@ class _LoginScreenState extends State<LoginScreen> {
               style: TextStyle(color: textColor),
               obscureText: true,
               decoration: InputDecoration(
-                labelText: "Şifre",
+                labelText: lt(_selectedLang, 'password'),
                 labelStyle: TextStyle(color: textColor),
                 enabledBorder: OutlineInputBorder(
                   borderSide: BorderSide(color: textColor.withOpacity(0.5)),
@@ -135,7 +180,7 @@ class _LoginScreenState extends State<LoginScreen> {
               onPressed: _loading ? null : login,
               child: _loading
                   ? CircularProgressIndicator(color: textColor)
-                  : const Text("Giriş Yap"),
+                  : Text(lt(_selectedLang, 'loginBtn')),
             ),
             TextButton(
               onPressed: () {
@@ -145,7 +190,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 );
               },
               child: Text(
-                "Hesabın yok mu? Kayıt ol",
+                lt(_selectedLang, 'noAccount'),
                 style: TextStyle(color: textColor),
               ),
             ),

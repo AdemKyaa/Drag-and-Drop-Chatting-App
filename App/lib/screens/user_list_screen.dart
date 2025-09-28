@@ -3,36 +3,61 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'chat_screen.dart';
 import 'settings_screen.dart';
 
+// --- Diller ---
+const Map<String, Map<String, String>> _userListTranslations = {
+  'en': {
+    'friends': 'Friends',
+    'noFriends': 'You haven’t added any friends yet.',
+    'addFriend': 'Add Friend',
+    'enterUsername': 'Enter username',
+    'cancel': 'Cancel',
+    'add': 'Add',
+    'userNotFound': 'User not found',
+  },
+  'tr': {
+    'friends': 'Arkadaşlar',
+    'noFriends': 'Henüz arkadaş eklemediniz.',
+    'addFriend': 'Arkadaş Ekle',
+    'enterUsername': 'Kullanıcı adını gir',
+    'cancel': 'İptal',
+    'add': 'Ekle',
+    'userNotFound': 'Kullanıcı bulunamadı',
+  },
+};
+
+String ut(String lang, String key) {
+  return _userListTranslations[lang]?[key] ?? key;
+}
+
 class UserListScreen extends StatelessWidget {
   final String currentUserId;
 
   const UserListScreen({super.key, required this.currentUserId});
 
   // Arkadaş ekleme işlemi
-  Future<void> _addFriend(BuildContext context) async {
+  Future<void> _addFriend(BuildContext context, String lang) async {
     final controller = TextEditingController();
 
     await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("Arkadaş Ekle"),
+        title: Text(ut(lang, 'addFriend')),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(
-            hintText: "Kullanıcı adını gir",
+          decoration: InputDecoration(
+            hintText: ut(lang, 'enterUsername'),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text("İptal"),
+            child: Text(ut(lang, 'cancel')),
           ),
           TextButton(
             onPressed: () async {
               final username = controller.text.trim();
               if (username.isEmpty) return;
 
-              // Firestore'da username ile ara
               final snap = await FirebaseFirestore.instance
                   .collection("users")
                   .where("displayName", isEqualTo: username)
@@ -53,11 +78,11 @@ class UserListScreen extends StatelessWidget {
                 }
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Kullanıcı bulunamadı")),
+                  SnackBar(content: Text(ut(lang, 'userNotFound'))),
                 );
               }
             },
-            child: const Text("Ekle"),
+            child: Text(ut(lang, 'add')),
           ),
         ],
       ),
@@ -77,6 +102,7 @@ class UserListScreen extends StatelessWidget {
         final userData = userSnap.data?.data() ?? {};
         final bool isDarkMode = userData["isDarkMode"] ?? false;
         final int seed = (userData["themeColor"] as int?) ?? 0xFF2962FF;
+        final String lang = userData["lang"] ?? 'tr'; // 🔹 dil Firestore’dan
 
         final background = isDarkMode ? Colors.grey[900] : Colors.grey[50];
         final cardColor = isDarkMode ? Colors.black : Colors.white;
@@ -88,7 +114,7 @@ class UserListScreen extends StatelessWidget {
             backgroundColor: cardColor,
             foregroundColor: textColor,
             iconTheme: IconThemeData(color: textColor),
-            title: Text("Arkadaşlar", style: TextStyle(color: textColor)),
+            title: Text(ut(lang, 'friends'), style: TextStyle(color: textColor)),
             actions: [
               IconButton(
                 icon: Icon(Icons.settings, color: textColor),
@@ -115,7 +141,7 @@ class UserListScreen extends StatelessWidget {
               if (friends.isEmpty) {
                 return Center(
                   child: Text(
-                    "Henüz arkadaş eklemediniz.",
+                    ut(lang, 'noFriends'),
                     style: TextStyle(color: textColor),
                   ),
                 );
@@ -126,18 +152,15 @@ class UserListScreen extends StatelessWidget {
                 itemBuilder: (ctx, i) {
                   final friendId = friends[i].id;
 
-                  // Arkadaş bilgilerini users tablosundan çekiyoruz
                   return StreamBuilder<DocumentSnapshot>(
                     stream: FirebaseFirestore.instance
                         .collection("users")
                         .doc(friendId)
                         .snapshots(),
                     builder: (ctx, userSnap) {
-                      if (!userSnap.hasData) {
-                        return const SizedBox.shrink();
-                      }
-                      final data = userSnap.data!.data() as Map<String, dynamic>?;
+                      if (!userSnap.hasData) return const SizedBox.shrink();
 
+                      final data = userSnap.data!.data() as Map<String, dynamic>?;
                       if (data == null) return const SizedBox.shrink();
 
                       final name = data["displayName"] ?? "Bilinmiyor";
@@ -189,7 +212,7 @@ class UserListScreen extends StatelessWidget {
           ),
           floatingActionButton: FloatingActionButton(
             backgroundColor: themeColor,
-            onPressed: () => _addFriend(context),
+            onPressed: () => _addFriend(context, lang),
             child: const Icon(Icons.person_add, color: Colors.white),
           ),
         );

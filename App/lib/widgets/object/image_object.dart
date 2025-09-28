@@ -1,4 +1,3 @@
-// lib/widgets/object/image_object.dart
 import 'dart:math';
 import 'package:flutter/material.dart';
 
@@ -18,11 +17,14 @@ class ImageObject extends StatefulWidget {
   final void Function(bool)? onDraggingOverTrash;
   final void Function(bool)? onInteract;
   final void Function(BoxItem box, int pointerId, Offset globalPos)? onPrimaryPointerDown;
-  final bool isDarkMode; // ✅ Dark mode bilgisi parametreyle geliyor
+  final bool isDarkMode;
 
   // z-index
   final VoidCallback? onBringToFront;
   final VoidCallback? onSendToBack;
+
+  // 🔹 dil için eklendi
+  final String currentUserId;
 
   const ImageObject({
     super.key,
@@ -39,6 +41,7 @@ class ImageObject extends StatefulWidget {
     this.onBringToFront,
     this.onSendToBack,
     required this.isDarkMode,
+    required this.currentUserId, // 🔹 zorunlu
   });
 
   @override
@@ -146,6 +149,7 @@ class _ImageObjectState extends State<ImageObject> {
                   onBringToFront: widget.onBringToFront,
                   onSendToBack: widget.onSendToBack,
                   isDarkMode: widget.isDarkMode,
+                  currentUserId: widget.currentUserId, // 🔹 buraya eklendi
                 ),
               );
             },
