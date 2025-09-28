@@ -30,7 +30,7 @@ class ImageEditPanel extends StatefulWidget {
   final VoidCallback? onBringToFront;
   final VoidCallback? onSendToBack;
   final bool isDarkMode;
-  final String currentUserId; // 🔹 dil için eklendi
+  final String currentUserId;
 
   const ImageEditPanel({
     super.key,
@@ -62,8 +62,21 @@ class _ImageEditPanelState extends State<ImageEditPanel> {
         final lang = data['lang'] ?? 'tr';
 
         final isDarkMode = widget.isDarkMode;
-        final background = isDarkMode ? Colors.black : Colors.white;
-        final textColor = isDarkMode ? Colors.white : Colors.black;
+
+        // ✅ Yeşil palete uygun renkler
+        final background = isDarkMode
+            ? const Color(0xFF0D1A13) // Çok koyu yeşil / siyaha yakın
+            : const Color(0xFFB9DFC1); // Açık pastel yeşil
+
+        final cardColor = isDarkMode
+            ? const Color(0xFF1B2E24) // Dark mode kart
+            : const Color(0xFF9CC5A4); // Light mode kart
+
+        final textColor = isDarkMode
+            ? const Color(0xFFE6F2E9) // Açık yazı
+            : const Color(0xFF1B3C2E); // Koyu yazı
+
+        const themeColor = Color(0xFF4CAF50); // Canlı yeşil slider
 
         return Container(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
@@ -83,7 +96,7 @@ class _ImageEditPanelState extends State<ImageEditPanel> {
                   height: 4,
                   margin: const EdgeInsets.only(bottom: 12),
                   decoration: BoxDecoration(
-                    color: Colors.grey,
+                    color: textColor.withOpacity(0.3),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -97,6 +110,8 @@ class _ImageEditPanelState extends State<ImageEditPanel> {
                         value: b.borderRadius,
                         min: 0,
                         max: 1,
+                        activeColor: themeColor,
+                        inactiveColor: textColor.withOpacity(0.3),
                         onChanged: (v) {
                           setState(() => b.borderRadius = v);
                           widget.onUpdate();
@@ -116,6 +131,8 @@ class _ImageEditPanelState extends State<ImageEditPanel> {
                         value: b.imageOpacity,
                         min: 0,
                         max: 1,
+                        activeColor: themeColor,
+                        inactiveColor: textColor.withOpacity(0.3),
                         onChanged: (v) {
                           setState(() => b.imageOpacity = v);
                           widget.onUpdate();
@@ -128,6 +145,7 @@ class _ImageEditPanelState extends State<ImageEditPanel> {
 
                 const SizedBox(height: 12),
 
+                // Z-order buttons
                 Row(
                   children: [
                     Expanded(
@@ -136,6 +154,7 @@ class _ImageEditPanelState extends State<ImageEditPanel> {
                         style: OutlinedButton.styleFrom(
                           foregroundColor: textColor,
                           side: BorderSide(color: textColor.withOpacity(0.5)),
+                          backgroundColor: cardColor,
                         ),
                         child: Text(it(lang, 'bringFront')),
                       ),
@@ -147,6 +166,7 @@ class _ImageEditPanelState extends State<ImageEditPanel> {
                         style: OutlinedButton.styleFrom(
                           foregroundColor: textColor,
                           side: BorderSide(color: textColor.withOpacity(0.5)),
+                          backgroundColor: cardColor,
                         ),
                         child: Text(it(lang, 'sendBack')),
                       ),

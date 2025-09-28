@@ -104,10 +104,19 @@ class UserListScreen extends StatelessWidget {
         final int seed = (userData["themeColor"] as int?) ?? 0xFF2962FF;
         final String lang = userData["lang"] ?? 'tr'; // 🔹 dil Firestore’dan
 
-        final background = isDarkMode ? Colors.grey[900] : Colors.grey[50];
-        final cardColor = isDarkMode ? Colors.black : Colors.white;
-        final textColor = isDarkMode ? Colors.white : Colors.black;
-        final themeColor = Color(seed);
+      final background = isDarkMode
+          ? const Color(0xFF1B2E24)   // Dark mode background
+          : const Color(0xFFB9DFC1);  // Light mode background
+
+      final cardColor = isDarkMode
+          ? const Color(0xFF264332)   // Dark mode card
+          : const Color(0xFF9CC5A4);  // Light mode card
+
+      final textColor = isDarkMode
+          ? const Color(0xFFE6F2E9)   // Dark mode text
+          : const Color(0xFF1B3C2E);  // Light mode text
+
+      const themeColor = Color(0xFF4CAF50);
 
         return Scaffold(
           appBar: AppBar(
@@ -148,6 +157,7 @@ class UserListScreen extends StatelessWidget {
               }
 
               return ListView.builder(
+                padding: const EdgeInsets.all(16),
                 itemCount: friends.length,
                 itemBuilder: (ctx, i) {
                   final friendId = friends[i].id;
@@ -169,13 +179,6 @@ class UserListScreen extends StatelessWidget {
                       final visible = data["isOnlineVisible"] ?? true;
 
                       Widget statusIcon = const SizedBox.shrink();
-                      if (visible) {
-                        statusIcon = Icon(
-                          Icons.circle,
-                          size: 12,
-                          color: isOnline ? Colors.green : Colors.grey,
-                        );
-                      }
 
                       return Card(
                         color: cardColor,

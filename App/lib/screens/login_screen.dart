@@ -3,6 +3,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:bcrypt/bcrypt.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+
 import 'user_list_screen.dart';
 import 'register_screen.dart';
 
@@ -48,6 +50,21 @@ class _LoginScreenState extends State<LoginScreen> {
   bool? _isDarkMode;
   String _selectedLang = 'tr'; // 🔹 varsayılan TR
 
+  // 🔹 FCM token kaydetme
+  Future<void> _saveFcmToken(String uid) async {
+    try {
+      final fcmToken = await FirebaseMessaging.instance.getToken();
+      if (fcmToken != null) {
+        await users.doc(uid).set(
+          {'fcmToken': fcmToken},
+          SetOptions(merge: true),
+        );
+      }
+    } catch (e) {
+      debugPrint("⚠️ Token kaydedilemedi: $e");
+    }
+  }
+
   Future<void> login() async {
     setState(() => _loading = true);
 
@@ -66,6 +83,9 @@ class _LoginScreenState extends State<LoginScreen> {
             "isOnline": true,
             "lastSeen": FieldValue.serverTimestamp(),
           });
+
+          // ✅ Token kaydet
+          await _saveFcmToken(userDoc.id);
 
           Navigator.pushReplacement(
             context,
@@ -94,9 +114,18 @@ class _LoginScreenState extends State<LoginScreen> {
     final isDark =
         _isDarkMode ?? MediaQuery.of(context).platformBrightness == Brightness.dark;
 
-    final background = isDark ? Colors.grey[900] : Colors.grey[50];
-    final cardColor = isDark ? Colors.grey[850]! : Colors.white;
-    final textColor = isDark ? Colors.white : Colors.black;
+    // ✅ Chat ekranıyla uyumlu pastel/koyu yeşil tonları
+    final background = isDark
+        ? const Color(0xFF1B2E24) // Dark mode background
+        : const Color(0xFFB9DFC1); // Light mode background
+
+    final cardColor = isDark
+        ? const Color(0xFF264332) // Dark mode card
+        : const Color(0xFF9CC5A4); // Light mode card
+
+    final textColor = isDark
+        ? const Color(0xFFE6F2E9) // Dark mode text
+        : const Color(0xFF1B3C2E); // Light mode text
 
     return Scaffold(
       appBar: AppBar(

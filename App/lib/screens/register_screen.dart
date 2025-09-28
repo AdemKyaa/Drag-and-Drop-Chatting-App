@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:bcrypt/bcrypt.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+
 import 'user_list_screen.dart';
 
 // --- Diller ---
@@ -43,6 +45,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool? _isDarkMode;
   String _selectedLang = 'tr'; // 🔹 varsayılan TR
 
+  // 🔹 FCM token kaydet
+  Future<void> _saveFcmToken(String uid) async {
+    try {
+      final fcmToken = await FirebaseMessaging.instance.getToken();
+      if (fcmToken != null) {
+        await FirebaseFirestore.instance.collection('users').doc(uid).set(
+          {'fcmToken': fcmToken},
+          SetOptions(merge: true),
+        );
+      }
+    } catch (e) {
+      debugPrint("⚠️ Token kaydedilemedi: $e");
+    }
+  }
+
   Future<void> _register() async {
     final username = _usernameController.text.trim();
     final password = _passwordController.text.trim();
@@ -79,13 +96,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
         'photoUrl': '',
         'isOnline': true,
         'isOnlineVisible': true,
-        'themeColor': 0xFF2962FF,
+        'themeColor': 0xFF4CAF50, // ✅ sabit yeşil ton
         'chatBgType': 'color',
         'chatBgColor': 0xFFFFFFFF,
         'chatBgUrl': '',
         'createdAt': FieldValue.serverTimestamp(),
         'lang': _selectedLang, // 🔹 seçilen dili kaydet
       });
+
+      // ✅ Token kaydet
+      await _saveFcmToken(uid);
 
       if (!mounted) return;
 
@@ -107,13 +127,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final isDark = _isDarkMode ??
         MediaQuery.of(context).platformBrightness == Brightness.dark;
 
-    final background = isDark ? Colors.grey[900] : Colors.grey[50];
-    final cardColor = isDark ? Colors.black : Colors.white;
-    final textColor = isDark ? Colors.white : Colors.black;
+    // ✅ Yeşil palete uyumlu renkler
+    final background =
+        isDark ? const Color(0xFF1B2E24) : const Color(0xFFB9DFC1);
+    final cardColor =
+        isDark ? const Color(0xFF264332) : const Color(0xFF9CC5A4);
+    final textColor =
+        isDark ? const Color(0xFFE6F2E9) : const Color(0xFF1B3C2E);
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(rt(_selectedLang, 'register')),
+        title: Text(rt(_selectedLang, 'register'),
+            style: TextStyle(color: textColor)),
         backgroundColor: cardColor,
         foregroundColor: textColor,
         actions: [
@@ -184,7 +209,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
             const SizedBox(height: 20),
             _loading
-                ? const CircularProgressIndicator()
+                ? CircularProgressIndicator(color: textColor)
                 : ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: cardColor,

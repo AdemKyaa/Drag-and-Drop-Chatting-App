@@ -9,33 +9,20 @@ const Map<String, Map<String, String>> _translations = {
   'en': {
     'settings': 'Settings',
     'profileName': 'Profile Name',
-    'themeColor': 'Theme Color',
     'onlineVisible': 'Show Online Status',
     'darkMode': 'Dark Mode',
-    'language': 'Language',
   },
   'tr': {
     'settings': 'Ayarlar',
     'profileName': 'Profil Adı',
-    'themeColor': 'Tema Rengi',
     'onlineVisible': 'Online Durumunu Göster',
     'darkMode': 'Karanlık Mod',
-    'language': 'Dil',
   },
 };
 
 String t(String lang, String key) {
   return _translations[lang]?[key] ?? key;
 }
-
-const _presetSeeds = <int>[
-  0xFF2962FF, // Mavi
-  0xFF00C853, // Yeşil
-  0xFFFF1744, // Kırmızı
-  0xFFFF6D00, // Turuncu
-  0xFFAA00FF, // Mor
-  0xFF00B0FF, // Açık mavi
-];
 
 class SettingsScreen extends StatefulWidget {
   final String currentUserId;
@@ -94,20 +81,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final uid = widget.currentUserId;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    const themeColor = Color(0xFF4CAF50); // 🌿 Sabit canlı pastel yeşil
 
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
       builder: (context, snap) {
         final data = snap.data?.data() ?? {};
         final photoUrl = data['photoUrl'] as String? ?? "";
-        final int? currentSeed = data['themeColor'] as int?;
         final bool isOnlineVisible = data['isOnlineVisible'] ?? true;
         final bool isDarkMode = data['isDarkMode'] ?? false;
 
-        final background = isDarkMode ? Colors.grey[900] : Colors.grey[50];
-        final cardColor = isDarkMode ? Colors.black : Colors.white;
-        final textColor = isDarkMode ? Colors.white : Colors.black;
+      final background = isDarkMode
+          ? const Color(0xFF1B2E24)   // Dark mode background
+          : const Color(0xFFB9DFC1);  // Light mode background
+
+      final cardColor = isDarkMode
+          ? const Color(0xFF264332)   // Dark mode card
+          : const Color(0xFF9CC5A4);  // Light mode card
+
+      final textColor = isDarkMode
+          ? const Color(0xFFE6F2E9)   // Dark mode text
+          : const Color(0xFF1B3C2E);  // Light mode text
 
         return Scaffold(
           appBar: AppBar(
@@ -153,38 +147,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
               const SizedBox(height: 24),
 
-              // Tema Rengi
-              Text(t(_selectedLang, 'themeColor'),
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w600, color: textColor)),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: _presetSeeds.map((seed) {
-                  final selected = currentSeed == seed;
-                  return InkWell(
-                    onTap: () async {
-                      await FirebaseFirestore.instance.collection('users').doc(uid).set(
-                        {'themeColor': seed},
-                        SetOptions(merge: true),
-                      );
-                    },
-                    child: CircleAvatar(
-                      backgroundColor: Color(seed),
-                      child: selected ? const Icon(Icons.check, color: Colors.white) : null,
-                    ),
-                  );
-                }).toList(),
-              ),
-
-              const SizedBox(height: 24),
-
               // Online durum
               SwitchListTile(
                 title: Text(t(_selectedLang, 'onlineVisible'),
                     style: TextStyle(color: textColor)),
-                activeColor: Colors.blue,
+                activeColor: themeColor,
                 value: isOnlineVisible,
                 onChanged: (val) async {
                   await FirebaseFirestore.instance.collection('users').doc(uid).set(
@@ -200,7 +167,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               SwitchListTile(
                 title: Text(t(_selectedLang, 'darkMode'),
                     style: TextStyle(color: textColor)),
-                activeColor: Colors.blue,
+                activeColor: themeColor,
                 value: isDarkMode,
                 onChanged: (val) async {
                   await FirebaseFirestore.instance.collection('users').doc(uid).set(
@@ -212,15 +179,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
               const SizedBox(height: 24),
 
-              // Dil seçme (Bayrak ikonları)
+              // Dil seçme (Yazısız, emojiler ortada)
               Row(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(
-                    t(_selectedLang, 'language'),
-                    style: TextStyle(color: textColor, fontSize: 16),
-                  ),
-                  const SizedBox(width: 20),
-
                   // Türk Bayrağı 🇹🇷
                   GestureDetector(
                     onTap: () async {
@@ -232,13 +194,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     },
                     child: Opacity(
                       opacity: _selectedLang == 'tr' ? 1.0 : 0.4,
-                      child: const Text(
-                        "🇹🇷",
-                        style: TextStyle(fontSize: 28),
-                      ),
+                      child: const Text("🇹🇷", style: TextStyle(fontSize: 32)),
                     ),
                   ),
-                  const SizedBox(width: 16),
+                  const SizedBox(width: 24),
 
                   // Amerikan Bayrağı 🇺🇸
                   GestureDetector(
@@ -251,10 +210,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     },
                     child: Opacity(
                       opacity: _selectedLang == 'en' ? 1.0 : 0.4,
-                      child: const Text(
-                        "🇺🇸",
-                        style: TextStyle(fontSize: 28),
-                      ),
+                      child: const Text("🇺🇸", style: TextStyle(fontSize: 32)),
                     ),
                   ),
                 ],

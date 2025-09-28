@@ -76,10 +76,19 @@ class _EmojiEditPanelState extends State<EmojiEditPanel> {
         final int seed = (data['themeColor'] as int?) ?? 0xFF2962FF;
         final String lang = data['lang'] ?? 'tr'; // 🔹 dili oku
 
-        final background = isDarkMode ? Colors.grey[900] : Colors.grey[50];
-        final cardColor = isDarkMode ? Colors.grey[850]! : Colors.white;
-        final textColor = isDarkMode ? Colors.white : Colors.black;
-        final themeColor = Color(seed);
+        final background = isDarkMode
+            ? const Color(0xFF0D1A13) // Çok koyu yeşil/siyaha yakın
+            : const Color(0xFFB9DFC1); // Açık pastel yeşil
+
+        final cardColor = isDarkMode
+            ? const Color(0xFF1B2E24) // Dark mode kart (koyu yeşil)
+            : const Color(0xFF9CC5A4); // Light mode kart
+
+        final textColor = isDarkMode
+            ? const Color(0xFFE6F2E9) // Açık yazı rengi
+            : const Color(0xFF1B3C2E); // Koyu yazı rengi
+
+        const themeColor = Color(0xFF4CAF50); // Canlı yeşil (slider için)
 
         return Container(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),

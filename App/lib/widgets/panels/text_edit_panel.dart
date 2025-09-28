@@ -22,8 +22,8 @@ const Map<String, Map<String, String>> _textPanelTranslations = {
     'title': 'Metin Ayarları',
     'bgColor': 'Arka Plan Rengi',
     'select': 'Seç',
-    'bgOpacity': 'BG Opacity',
-    'radius': 'Radius (%)',
+    'bgOpacity': 'Arka Plan Opaklığı',
+    'radius': 'Köşe Yumuşatma (%)',
     'textColor': 'Metin Rengi',
     'bringFront': 'En Üste Al',
     'sendBack': 'En Alta Al',
@@ -41,8 +41,8 @@ class TextEditPanel extends StatefulWidget {
   final VoidCallback onSave;
   final VoidCallback? onBringToFront;
   final VoidCallback? onSendToBack;
-  final bool isDarkMode; 
-  final String currentUserId; // 🔹 Firestore’dan lang okumak için
+  final bool isDarkMode;
+  final String currentUserId;
 
   const TextEditPanel({
     super.key,
@@ -84,13 +84,16 @@ class _TextEditPanelState extends State<TextEditPanel> {
     await showDialog(
       context: context,
       builder: (_) {
-        final bgColor =
-            widget.isDarkMode ? Colors.grey[900] : Colors.white;
-        final textColor =
-            widget.isDarkMode ? Colors.white : Colors.black;
+        final background = widget.isDarkMode
+            ? const Color(0xFF1B2E24)
+            : const Color(0xFFB9DFC1);
+
+        final textColor = widget.isDarkMode
+            ? const Color(0xFFE6F2E9)
+            : const Color(0xFF1B3C2E);
 
         return AlertDialog(
-          backgroundColor: bgColor,
+          backgroundColor: background,
           title: Text(title, style: TextStyle(color: textColor)),
           content: SingleChildScrollView(
             child: ColorPicker(
@@ -123,8 +126,20 @@ class _TextEditPanelState extends State<TextEditPanel> {
   Widget build(BuildContext context) {
     final b = widget.box;
 
-    final bgColor = widget.isDarkMode ? Colors.grey[900] : Colors.white;
-    final textColor = widget.isDarkMode ? Colors.white : Colors.black;
+    final isDark = widget.isDarkMode;
+    final background = isDark
+        ? const Color(0xFF0D1A13) // Çok koyu yeşil / siyaha yakın
+        : const Color(0xFFB9DFC1); // Açık pastel yeşil
+
+    final cardColor = isDark
+        ? const Color(0xFF1B2E24)
+        : const Color(0xFF9CC5A4);
+
+    final textColor = isDark
+        ? const Color(0xFFE6F2E9)
+        : const Color(0xFF1B3C2E);
+
+    const themeColor = Color(0xFF4CAF50); // canlı yeşil
 
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
@@ -133,13 +148,13 @@ class _TextEditPanelState extends State<TextEditPanel> {
           .snapshots(),
       builder: (context, snap) {
         final data = snap.data?.data() ?? {};
-        final String lang = data['lang'] ?? 'tr'; // 🔹 dili oku
+        final String lang = data['lang'] ?? 'tr';
 
         return SafeArea(
           child: Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: bgColor,
+              color: background,
               borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
               boxShadow: const [
                 BoxShadow(blurRadius: 12, color: Colors.black26),
@@ -166,7 +181,12 @@ class _TextEditPanelState extends State<TextEditPanel> {
                     const SizedBox(width: 12),
                     OutlinedButton.icon(
                       icon: Icon(Icons.color_lens, color: textColor),
-                      label: Text(tt(lang, 'select'), style: TextStyle(color: textColor)),
+                      label: Text(tt(lang, 'select'),
+                          style: TextStyle(color: textColor)),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: textColor.withOpacity(0.5)),
+                        backgroundColor: cardColor,
+                      ),
                       onPressed: () async {
                         await _pickColor(
                           title: tt(lang, 'bgColor'),
@@ -195,6 +215,8 @@ class _TextEditPanelState extends State<TextEditPanel> {
                         value: localBgOpacity,
                         min: 0,
                         max: 1,
+                        activeColor: themeColor,
+                        inactiveColor: textColor.withOpacity(0.3),
                         onChanged: (v) {
                           setState(() => localBgOpacity = v);
                           b.backgroundOpacity = v;
@@ -215,6 +237,8 @@ class _TextEditPanelState extends State<TextEditPanel> {
                         value: localRadiusFactor,
                         min: 0,
                         max: 0.5,
+                        activeColor: themeColor,
+                        inactiveColor: textColor.withOpacity(0.3),
                         onChanged: (v) {
                           setState(() => localRadiusFactor = v);
                           b.borderRadius = v;
@@ -233,7 +257,12 @@ class _TextEditPanelState extends State<TextEditPanel> {
                     const SizedBox(width: 12),
                     OutlinedButton.icon(
                       icon: Icon(Icons.color_lens, color: textColor),
-                      label: Text(tt(lang, 'select'), style: TextStyle(color: textColor)),
+                      label: Text(tt(lang, 'select'),
+                          style: TextStyle(color: textColor)),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: textColor.withOpacity(0.5)),
+                        backgroundColor: cardColor,
+                      ),
                       onPressed: () async {
                         await _pickColor(
                           title: tt(lang, 'textColor'),
@@ -262,6 +291,10 @@ class _TextEditPanelState extends State<TextEditPanel> {
                         icon: Icon(Icons.vertical_align_top, color: textColor),
                         label: Text(tt(lang, 'bringFront'),
                             style: TextStyle(color: textColor)),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: textColor.withOpacity(0.5)),
+                          backgroundColor: cardColor,
+                        ),
                         onPressed: widget.onBringToFront,
                       ),
                     ),
@@ -271,6 +304,10 @@ class _TextEditPanelState extends State<TextEditPanel> {
                         icon: Icon(Icons.vertical_align_bottom, color: textColor),
                         label: Text(tt(lang, 'sendBack'),
                             style: TextStyle(color: textColor)),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: textColor.withOpacity(0.5)),
+                          backgroundColor: cardColor,
+                        ),
                         onPressed: widget.onSendToBack,
                       ),
                     ),

@@ -438,10 +438,23 @@ Widget build(BuildContext context) {
       final bool isDarkMode = data['isDarkMode'] ?? false;
       final int seed = (data['themeColor'] as int?) ?? 0xFF2962FF;
 
-      final background = isDarkMode ? Colors.grey[900] : Colors.grey[50];
-      final cardColor = isDarkMode ? Colors.black : Colors.white;
-      final textColor = isDarkMode ? Colors.white : Colors.black;
-      final themeColor = Color(seed);
+      // Ana baz renk (görseldeki yeşilin temeli)
+      const baseGreen = Color(0xFF2E7D32);
+
+      // Tema renkleri
+      final background = isDarkMode 
+          ? const Color(0xFF1B2E24)   // koyu arkaplan
+          : const Color(0xFFB9DFC1);  // pastel açık arkaplan
+
+      final cardColor = isDarkMode 
+          ? const Color(0xFF264332)   // koyu kart
+          : const Color(0xFF9CC5A4);  // pastel kart
+
+      final textColor = isDarkMode 
+          ? const Color(0xFFE6F2E9)   // koyu temada açık yazı
+          : const Color(0xFF1B3C2E);  // açık temada koyu yazı
+
+      final themeColor = baseGreen;   // vurgu rengi aynı kalabilir
 
       final bgType = (data['chatBgType'] ?? 'color') as String;
       final bgUrl = data['chatBgUrl'] as String?;
@@ -564,7 +577,14 @@ Widget build(BuildContext context) {
                               ),
                             ),
                           )
-                        : Container(color: themeColor.withOpacity(0.1)),
+                        : const DecoratedBox(
+                            decoration: BoxDecoration(
+                              image: DecorationImage(
+                                image: AssetImage("assets/splash/seamless_bg.png"),
+                                repeat: ImageRepeat.repeat, // ✅ desen tekrarlansın
+                              ),
+                            ),
+                          ),
                   ),
 
                   // 2) Boş alana basınca seçimleri kaldır
